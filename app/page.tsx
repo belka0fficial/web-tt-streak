@@ -313,6 +313,15 @@ export default function Page() {
   }
 
   useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      getSupabase().auth.exchangeCodeForSession(code).then(({ data: { session } }) => {
+        window.history.replaceState(null, "", "/");
+        if (session) setSession(session);
+        else window.location.href = "/login";
+      });
+      return;
+    }
     getSupabase().auth.getSession().then(({ data: { session } }) => {
       if (!session) { window.location.href = "/login"; return; }
       setSession(session);
