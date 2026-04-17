@@ -313,13 +313,20 @@ export default function Page() {
   }
 
   useEffect(() => {
+    const isOAuthCallback = window.location.hash.startsWith("#access_token=");
+
     getSupabase().auth.getSession().then(({ data: { session } }) => {
-      if (!session) { window.location.href = "/login"; return; }
-      setSession(session);
+      if (!session && !isOAuthCallback) { window.location.href = "/login"; return; }
+      if (session) setSession(session);
     });
+
     const { data: { subscription } } = getSupabase().auth.onAuthStateChange((_, s) => {
-      if (!s) { window.location.href = "/login"; return; }
-      setSession(s);
+      if (s) {
+        setSession(s);
+        if (isOAuthCallback) window.history.replaceState(null, "", window.location.pathname);
+      } else if (!isOAuthCallback) {
+        window.location.href = "/login";
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
