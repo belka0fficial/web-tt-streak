@@ -11,7 +11,7 @@ import {
 import clsx from "clsx";
 
 interface Friend {
-  id: number;
+  id: string;
   name: string;
   handle: string;
   active: boolean;
@@ -599,19 +599,19 @@ export default function Page() {
     await patch({ friends: list });
   }
 
-  function toggleFriend(id: number) {
+  function toggleFriend(id: string) {
     const updated = friends.map(f => f.id === id ? { ...f, active: !f.active } : f);
     saveFriends(updated);
   }
 
-  function deleteFriend(id: number) {
+  function deleteFriend(id: string) {
     saveFriends(friends.filter(f => f.id !== id));
   }
 
   function commitAdd() {
     if (!newName.trim()) return;
     const updated: Friend[] = [...friends, {
-      id: Date.now(),
+      id: String(Date.now()),
       name: newName.trim(),
       handle: newHandle.trim() || `@${newName.trim().toLowerCase().replace(/\s+/g, "_")}`,
       active: true,

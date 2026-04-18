@@ -69,9 +69,20 @@ export async function runAutomation(userId: string) {
   try {
     if (!cookies?.length) throw new Error('No TikTok session — connect TikTok first');
 
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--no-sandbox', '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-dev-shm-usage', '--disable-gpu',
+        '--no-zygote', '--single-process',
+      ],
+    });
     const ctx = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+      viewport: { width: 390, height: 844 },
+      isMobile: true,
+      hasTouch: true,
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.addCookies(cookies as any);
