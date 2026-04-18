@@ -20,7 +20,10 @@ export async function getSettings(userId: string): Promise<Settings> {
     sb.from('settings').select('*').eq('user_id', userId).single(),
     sb.from('friends').select('*').eq('user_id', userId),
   ]);
-  if (!s) return { ...DEFAULT_SETTINGS };
+  if (!s) return {
+    ...DEFAULT_SETTINGS,
+    friends: (friends ?? []).map(f => ({ id: f.id, name: f.name, handle: f.handle, active: f.active })),
+  };
   return {
     schedule: { enabled: s.schedule_enabled, time: s.schedule_time },
     friends: (friends ?? []).map(f => ({ id: f.id, name: f.name, handle: f.handle, active: f.active })),
