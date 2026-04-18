@@ -54,13 +54,13 @@ export default function TikTokBrowserPage() {
       const d = await r.json();
       if (d.phase === "done") {
         clearInterval(statusLoop);
-        clearInterval(screenshotLoop);
+        running = false;
         setPhase("done");
         window.opener?.postMessage("tiktok-connected", "*");
         setTimeout(() => window.close(), 1200);
       } else if (d.phase === "error") {
         clearInterval(statusLoop);
-        clearInterval(screenshotLoop);
+        running = false;
         setPhase("error");
       }
     }, 2000);
