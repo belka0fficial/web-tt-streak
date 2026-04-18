@@ -56,10 +56,26 @@ async function firstVisible(page: Page, selectors: string[], timeout = 8000) {
 async function sendDM(ctx: BrowserContext, handle: string, message: string) {
   const page = await ctx.newPage();
   try {
-    await page.goto(`https://www.tiktok.com/@${handle.replace(/^@/, '')}`, {
+    // Visit homepage with networkidle so TikTok JS fully runs and sets ttwid/tt_csrf_token/msToken
+    await page.goto('https://www.tiktok.com', { waitUntil: 'networkidle', timeout: 45_000 }).catch(() =>
+      page.goto('https://www.tiktok.com', { waitUntil: 'domcontentloaded', timeout: 30_000 })
+    );
+    await page.waitForTimeout(4000);
+
+    if (await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
+      throw new Error('Session expired — reconnect TikTok');
+
+    const cleanHandle = handle.replace(/^@/, '');
+
+    // Try messages inbox approach first — more reliable than profile page click
+    const dmSent = await sendViaMsgInbox(page, cleanHandle, message).catch(() => false);
+    if (dmSent) return;
+
+    // Fallback: profile page → Message button
+    await page.goto(`https://www.tiktok.com/@${cleanHandle}`, {
       waitUntil: 'domcontentloaded', timeout: 30_000,
     });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     if (await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
       throw new Error('Session expired — reconnect TikTok');
@@ -68,21 +84,16 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
     if (!btn) {
       const shot = await page.screenshot({ type: 'png' }).catch(() => null);
       if (shot) fs.writeFileSync('/tmp/tiktok-debug.png', shot);
-      const url = page.url();
-      const title = await page.title().catch(() => '?');
-      throw new Error(`Message button not found — page: "${title}" url: ${url}`);
+      throw new Error(`Message button not found — page: "${await page.title().catch(() => '?')}" url: ${page.url()}`);
     }
     await btn.click();
-    // Wait for navigation or DM panel to open
     await page.waitForTimeout(3000);
 
     const input = await firstVisible(page, SEL.input, 15_000).catch(() => null);
     if (!input) {
       const shot = await page.screenshot({ type: 'png' }).catch(() => null);
       if (shot) fs.writeFileSync('/tmp/tiktok-debug.png', shot);
-      const url = page.url();
-      const title = await page.title().catch(() => '?');
-      throw new Error(`Message input not found — page: "${title}" url: ${url}`);
+      throw new Error(`Message input not found — page: "${await page.title().catch(() => '?')}" url: ${page.url()}`);
     }
     await input.click();
     await input.type(message, { delay: 30 });
@@ -94,6 +105,76 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
   } finally {
     await page.close();
   }
+}
+
+async function sendViaMsgInbox(page: Page, handle: string, message: string): Promise<boolean> {
+  await page.goto('https://www.tiktok.com/messages', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.waitForTimeout(3000);
+
+  // If redirected to login, inbox approach won't work
+  if (page.url().includes('/login') || await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
+    return false;
+
+  // Look for compose / new message button
+  const composeSelectors = [
+    '[data-e2e="new-message-btn"]',
+    '[data-e2e="compose"]',
+    'button[aria-label*="compose" i]',
+    'button[aria-label*="new message" i]',
+    'button[aria-label*="New" i]',
+    'button:has-text("New message")',
+    'button:has-text("Compose")',
+    '[class*="compose" i]',
+    '[class*="newMessage" i]',
+    'svg[class*="compose"]',
+  ];
+  const compose = await firstVisible(page, composeSelectors, 5000).catch(() => null);
+  if (!compose) return false;
+
+  await compose.click();
+  await page.waitForTimeout(2000);
+
+  // Search for user in the recipient field
+  const searchSelectors = [
+    '[data-e2e="search-user-input"]',
+    'input[placeholder*="Search" i]',
+    'input[placeholder*="search" i]',
+    'input[type="search"]',
+    'input[type="text"]',
+  ];
+  const searchInput = await firstVisible(page, searchSelectors, 5000).catch(() => null);
+  if (!searchInput) return false;
+
+  await searchInput.type(handle, { delay: 50 });
+  await page.waitForTimeout(2000);
+
+  // Click first search result
+  const resultSelectors = [
+    '[data-e2e="search-user-result"]',
+    '[class*="userItem" i]',
+    '[class*="user-item" i]',
+    '[class*="searchResult" i]',
+    'li[role="option"]',
+    '[role="option"]',
+  ];
+  const result = await firstVisible(page, resultSelectors, 5000).catch(() => null);
+  if (!result) return false;
+
+  await result.click();
+  await page.waitForTimeout(2000);
+
+  // Now type message in the chat input
+  const input = await firstVisible(page, SEL.input, 10_000).catch(() => null);
+  if (!input) return false;
+
+  await input.click();
+  await input.type(message, { delay: 30 });
+
+  const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
+  if (send) await send.click();
+  else await input.press('Enter');
+  await page.waitForTimeout(1500);
+  return true;
 }
 
 export async function runAutomation(userId: string) {
