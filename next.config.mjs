@@ -2,8 +2,8 @@
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['playwright'],
+    instrumentationHook: true, // required until Next.js 15 — loads instrumentation.ts
   },
-  // instrumentation.ts is enabled by default in Next.js 14.2+
 };
 
 export default nextConfig;
