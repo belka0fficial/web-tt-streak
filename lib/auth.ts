@@ -235,8 +235,10 @@ export async function startQRLogin(userId: string): Promise<void> {
 
 // ── Session ID paste ───────────────────────────────────────────────────────────
 // User copies sessionid from browser DevTools and pastes it here.
+// We hydrate it: visit TikTok with just sessionid so their JS generates ttwid,
+// tt_csrf_token, msToken etc., then save the full cookie set.
 export async function setSessionId(userId: string, sessionId: string): Promise<void> {
-  const cookies = [{
+  const seed = [{
     name: 'sessionid',
     value: sessionId.trim(),
     domain: '.tiktok.com',
@@ -244,9 +246,45 @@ export async function setSessionId(userId: string, sessionId: string): Promise<v
     httpOnly: true,
     secure: true,
     sameSite: 'None' as const,
-    expires: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60, // 60 days
+    expires: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60,
   }];
-  await setCookies(userId, cookies);
+
+  // Save seed immediately so the UI shows "connected" right away
+  await setCookies(userId, seed);
+
+  // Then hydrate in background — launch browser, let TikTok JS set all cookies
+  hydrateSession(userId, sessionId.trim()).catch(e =>
+    console.error('[auth] hydrateSession failed:', e)
+  );
+}
+
+async function hydrateSession(userId: string, sessionId: string): Promise<void> {
+  const ctx = await makeContext();
+  try {
+    await ctx.addCookies([{
+      name: 'sessionid',
+      value: sessionId,
+      domain: '.tiktok.com',
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'None' as const,
+      expires: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60,
+    }]);
+
+    const page = await ctx.newPage();
+    await page.goto('https://www.tiktok.com', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForTimeout(6000); // let TikTok JS set ttwid / tt_csrf_token / msToken
+    await page.close();
+
+    const cookies = await ctx.cookies('https://www.tiktok.com');
+    if (cookies.some(c => c.name === 'sessionid')) {
+      await setCookies(userId, cookies);
+      console.log(`[auth] hydrated ${cookies.length} cookies for ${userId}`);
+    }
+  } finally {
+    await ctx.browser()?.close().catch(() => {});
+  }
 }
 
 // ── Interactive popup (fallback) ───────────────────────────────────────────────

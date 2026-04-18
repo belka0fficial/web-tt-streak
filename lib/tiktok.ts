@@ -56,11 +56,9 @@ async function firstVisible(page: Page, selectors: string[], timeout = 8000) {
 async function sendDM(ctx: BrowserContext, handle: string, message: string) {
   const page = await ctx.newPage();
   try {
-    // Visit homepage with networkidle so TikTok JS fully runs and sets ttwid/tt_csrf_token/msToken
-    await page.goto('https://www.tiktok.com', { waitUntil: 'networkidle', timeout: 45_000 }).catch(() =>
-      page.goto('https://www.tiktok.com', { waitUntil: 'domcontentloaded', timeout: 30_000 })
-    );
-    await page.waitForTimeout(4000);
+    // Visit homepage so TikTok JS can run and refresh any expiring cookies
+    await page.goto('https://www.tiktok.com', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForTimeout(3000);
 
     if (await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
       throw new Error('Session expired — reconnect TikTok');
