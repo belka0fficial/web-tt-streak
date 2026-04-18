@@ -43,6 +43,27 @@ export function getRunStatus(userId: string) {
   return states.get(userId) ?? { status: 'idle' as RunStatus, error: null };
 }
 
+async function dismissModals(page: Page) {
+  // Close TikTok overlay modals (login prompts, app banners, etc.) that block clicks
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(300);
+  const closeSelectors = [
+    '.TUXModal-overlay',
+    '[data-e2e="modal-close-inner-button"]',
+    '[aria-label="Close" i]',
+    'button[aria-label*="close" i]',
+    '[class*="closeButton" i]',
+    '[class*="close-button" i]',
+  ];
+  for (const sel of closeSelectors) {
+    const el = page.locator(sel).first();
+    if (await el.isVisible({ timeout: 500 }).catch(() => false)) {
+      await el.click({ force: true, timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(300);
+    }
+  }
+}
+
 async function firstVisible(page: Page, selectors: string[], timeout = 8000) {
   for (const sel of selectors) {
     const ok = await page.locator(sel).first().isVisible({ timeout: 1500 }).catch(() => false);
@@ -59,6 +80,7 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
     // Visit homepage so TikTok JS can run and refresh any expiring cookies
     await page.goto('https://www.tiktok.com', { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForTimeout(3000);
+    await dismissModals(page);
 
     if (await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
       throw new Error('Session expired — reconnect TikTok');
@@ -74,6 +96,7 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
       waitUntil: 'domcontentloaded', timeout: 30_000,
     });
     await page.waitForTimeout(3000);
+    await dismissModals(page);
 
     if (await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
       throw new Error('Session expired — reconnect TikTok');
@@ -84,7 +107,7 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
       if (shot) fs.writeFileSync('/tmp/tiktok-debug.png', shot);
       throw new Error(`Message button not found — page: "${await page.title().catch(() => '?')}" url: ${page.url()}`);
     }
-    await btn.click();
+    await btn.click({ force: true });
     await page.waitForTimeout(3000);
 
     const input = await firstVisible(page, SEL.input, 15_000).catch(() => null);
@@ -108,6 +131,7 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
 async function sendViaMsgInbox(page: Page, handle: string, message: string): Promise<boolean> {
   await page.goto('https://www.tiktok.com/messages', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForTimeout(3000);
+  await dismissModals(page);
 
   // If redirected to login, inbox approach won't work
   if (page.url().includes('/login') || await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
