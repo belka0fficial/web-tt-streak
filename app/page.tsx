@@ -526,8 +526,7 @@ export default function Page() {
   const [newName,   setNewName]   = useState("");
   const [newHandle, setNewHandle] = useState("");
 
-  const [session, setSession]   = useState<Session | null>(null);
-  const initializedRef           = useRef(false);
+  const [session, setSession] = useState<Session | null>(null);
 
   const authFetch = useCallback((url: string, opts?: RequestInit) => {
     const token = session?.access_token ?? "";
@@ -544,8 +543,7 @@ export default function Page() {
     setSessionOk(data.sessionOk);
     setLog(data.logs ?? []);
     setRunning(data.status === "running");
-    if (!initializedRef.current && data.settings) {
-      initializedRef.current = true;
+    if (data.settings) {
       setScheduleOn(data.settings.schedule?.enabled ?? false);
       setScheduleTime(data.settings.schedule?.time ?? "09:00");
       setFriends(data.settings.friends ?? []);
@@ -586,6 +584,8 @@ export default function Page() {
       const d = await res.json().catch(() => ({}));
       console.error("[patch] server error:", d.error ?? res.status);
     }
+    // Re-read from DB after every save so the UI always reflects what's stored
+    await loadStatus();
   }
 
   async function handleScheduleToggle(on: boolean) {
