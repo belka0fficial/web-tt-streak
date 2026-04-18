@@ -193,6 +193,55 @@ export async function submitOtp(otp: string): Promise<void> {
   pollForSession(userId);
 }
 
+// ── QR code login ──────────────────────────────────────────────────────────────
+// Playwright opens TikTok QR login, we stream the screenshot back to the client.
+// User scans with TikTok app — no password needed.
+export async function startQRLogin(userId: string): Promise<void> {
+  closeBrowser();
+  phase = 'starting'; loginError = null; activeUserId = userId;
+
+  const ctx = await makeContext();
+  const page = await ctx.newPage();
+  activePage = page;
+  activeCtx = ctx;
+
+  await page.goto('https://www.tiktok.com/login', {
+    waitUntil: 'domcontentloaded', timeout: 30_000,
+  });
+  await page.waitForTimeout(2000);
+
+  // Click QR code tab if present
+  const qrBtn = page.locator([
+    '[data-e2e="qrcode-btn"]',
+    'a[href*="qrcode"]',
+    'div[class*="qr" i]',
+    'span:has-text("QR")',
+  ].join(', ')).first();
+  if (await qrBtn.isVisible({ timeout: 4000 }).catch(() => false)) {
+    await qrBtn.click();
+    await page.waitForTimeout(1000);
+  }
+
+  phase = 'enter_phone'; // signals "ready" to the status poller
+  pollForSession(userId);
+}
+
+// ── Session ID paste ───────────────────────────────────────────────────────────
+// User copies sessionid from browser DevTools and pastes it here.
+export async function setSessionId(userId: string, sessionId: string): Promise<void> {
+  const cookies = [{
+    name: 'sessionid',
+    value: sessionId.trim(),
+    domain: '.tiktok.com',
+    path: '/',
+    httpOnly: true,
+    secure: true,
+    sameSite: 'None' as const,
+    expires: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60, // 60 days
+  }];
+  await setCookies(userId, cookies);
+}
+
 // ── Interactive popup (fallback) ───────────────────────────────────────────────
 export async function startLogin(userId: string): Promise<void> {
   closeBrowser();

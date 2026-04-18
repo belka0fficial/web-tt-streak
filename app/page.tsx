@@ -164,39 +164,93 @@ function TimePickerModal({ time, onConfirm, onClose }: {
 
 type AuthFetch = (url: string, opts?: RequestInit) => Promise<Response>;
 
+// Common country codes — extend as needed
+const COUNTRY_CODES = [
+  { code: "+1",   flag: "🇺🇸", label: "US/CA" },
+  { code: "+44",  flag: "🇬🇧", label: "UK" },
+  { code: "+49",  flag: "🇩🇪", label: "DE" },
+  { code: "+33",  flag: "🇫🇷", label: "FR" },
+  { code: "+7",   flag: "🇷🇺", label: "RU" },
+  { code: "+972", flag: "🇮🇱", label: "IL" },
+  { code: "+380", flag: "🇺🇦", label: "UA" },
+  { code: "+90",  flag: "🇹🇷", label: "TR" },
+  { code: "+91",  flag: "🇮🇳", label: "IN" },
+  { code: "+86",  flag: "🇨🇳", label: "CN" },
+  { code: "+81",  flag: "🇯🇵", label: "JP" },
+  { code: "+82",  flag: "🇰🇷", label: "KR" },
+  { code: "+55",  flag: "🇧🇷", label: "BR" },
+  { code: "+52",  flag: "🇲🇽", label: "MX" },
+  { code: "+34",  flag: "🇪🇸", label: "ES" },
+  { code: "+39",  flag: "🇮🇹", label: "IT" },
+  { code: "+31",  flag: "🇳🇱", label: "NL" },
+  { code: "+48",  flag: "🇵🇱", label: "PL" },
+  { code: "+20",  flag: "🇪🇬", label: "EG" },
+  { code: "+966", flag: "🇸🇦", label: "SA" },
+];
+
+type ModalMode = "pick" | "creds" | "qr" | "session" | "otp" | "waiting" | "done" | "error";
+
 function LoginModal({ onClose, onSuccess, authFetch }: {
   onClose: () => void;
   onSuccess: () => void;
   authFetch: AuthFetch;
 }) {
-  const [mode,     setMode]     = useState<"pick" | "creds" | "otp" | "waiting" | "done" | "error">("pick");
-  const [phone,    setPhone]    = useState("");
-  const [password, setPassword] = useState("");
-  const [otp,      setOtp]      = useState("");
-  const [error,    setError]    = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [mode,      setMode]      = useState<ModalMode>("pick");
+  const [country,   setCountry]   = useState("+1");
+  const [localNum,  setLocalNum]  = useState("");
+  const [password,  setPassword]  = useState("");
+  const [otp,       setOtp]       = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [qrSrc,     setQrSrc]     = useState("");
+  const [error,     setError]     = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const pollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const qrBlobRef = useRef("");
 
-  function startPolling() {
+  const fullPhone = `${country}${localNum}`;
+
+  function stopPolling() { if (pollRef.current) clearInterval(pollRef.current); }
+  useEffect(() => stopPolling, []);
+
+  function startStatusPolling() {
     pollRef.current = setInterval(async () => {
       const res = await authFetch("/api/auth/status").catch(() => null);
       if (!res?.ok) return;
       const d = await res.json();
       if (d.phase === "done") {
-        clearInterval(pollRef.current!);
+        stopPolling();
         setMode("done");
         setTimeout(() => { onSuccess(); onClose(); }, 1000);
       } else if (d.phase === "error") {
-        clearInterval(pollRef.current!);
+        stopPolling();
         setError(d.error ?? "Login failed");
         setMode("error");
-      } else if (d.phase === "enter_otp" && mode !== "otp") {
+      } else if (d.phase === "enter_otp") {
         setMode("otp");
       }
     }, 2000);
   }
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  // QR screenshot loop
+  useEffect(() => {
+    if (mode !== "qr") return;
+    let running = true;
+    (async () => {
+      while (running) {
+        const r = await authFetch(`/api/auth/qr?t=${Date.now()}`).catch(() => null);
+        if (r?.ok) {
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          if (qrBlobRef.current) URL.revokeObjectURL(qrBlobRef.current);
+          qrBlobRef.current = url;
+          setQrSrc(url);
+        }
+        await new Promise(res => setTimeout(res, 1500));
+      }
+    })();
+    return () => { running = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
@@ -204,13 +258,37 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
     const res = await authFetch("/api/auth/credentials", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, password }),
+      body: JSON.stringify({ phone: fullPhone, password }),
     }).catch(() => null);
     const d = await res?.json().catch(() => ({}));
     if (!res?.ok) { setError(d?.error ?? "Failed"); setLoading(false); return; }
     setLoading(false);
     setMode("waiting");
-    startPolling();
+    startStatusPolling();
+  }
+
+  async function handleQR() {
+    setError(""); setLoading(true);
+    const res = await authFetch("/api/auth/qr-start", { method: "POST" }).catch(() => null);
+    if (!res?.ok) { setError("Failed to start"); setLoading(false); return; }
+    setLoading(false);
+    setMode("qr");
+    startStatusPolling();
+  }
+
+  async function handleSessionId(e: React.FormEvent) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    const res = await authFetch("/api/auth/session-id", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    }).catch(() => null);
+    const d = await res?.json().catch(() => ({}));
+    if (!res?.ok) { setError(d?.error ?? "Invalid"); setLoading(false); return; }
+    setLoading(false);
+    setMode("done");
+    setTimeout(() => { onSuccess(); onClose(); }, 1000);
   }
 
   async function handleOtp(e: React.FormEvent) {
@@ -226,7 +304,7 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
     setLoading(false);
   }
 
-  function openWebview() {
+  function openBrowserPopup() {
     window.open("/auth/tiktok", "_blank", "width=430,height=900");
     const handler = (e: MessageEvent) => {
       if (e.data === "tiktok-connected") {
@@ -238,6 +316,10 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
     onClose();
   }
 
+  function back() { stopPolling(); setMode("pick"); setError(""); setQrSrc(""); }
+
+  const inputCls = "w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors";
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80" onClick={onClose} />
@@ -248,6 +330,8 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
           <p className="text-xs text-[#555] mt-0.5">
             {mode === "pick"    && "Choose how to log in"}
             {mode === "creds"   && "Enter your TikTok credentials"}
+            {mode === "qr"      && "Scan with the TikTok app"}
+            {mode === "session" && "Paste your session cookie"}
             {mode === "waiting" && "Logging in…"}
             {mode === "otp"     && "TikTok sent you a verification code"}
             {mode === "done"    && "Connected!"}
@@ -257,59 +341,109 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
 
         {/* ── Pick method ── */}
         {mode === "pick" && (
-          <div className="space-y-2.5">
-            <button onClick={() => setMode("creds")}
-              className="w-full flex items-start gap-3.5 px-4 py-3.5 rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#444] transition-colors text-left">
-              <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-base">🔑</span>
-              </div>
-              <div>
-                <p className="text-sm font-medium">Phone + password</p>
-                <p className="text-xs text-[#555] mt-0.5">Enter credentials — logs in silently in the background</p>
-              </div>
-            </button>
-
-            <button onClick={openWebview}
-              className="w-full flex items-start gap-3.5 px-4 py-3.5 rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#444] transition-colors text-left">
-              <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-base">🌐</span>
-              </div>
-              <div>
-                <p className="text-sm font-medium">Open browser</p>
-                <p className="text-xs text-[#555] mt-0.5">Log in manually in a separate window</p>
-              </div>
-            </button>
+          <div className="space-y-2">
+            {[
+              { icon: "📱", title: "QR code", sub: "Scan with your TikTok app — no password needed", action: handleQR },
+              { icon: "🔑", title: "Phone + password", sub: "Logs in silently in the background", action: () => setMode("creds") },
+              { icon: "🍪", title: "Paste session ID", sub: "Copy sessionid from browser DevTools", action: () => setMode("session") },
+              { icon: "🌐", title: "Open browser", sub: "Interact with TikTok login manually", action: openBrowserPopup },
+            ].map(({ icon, title, sub, action }) => (
+              <button key={title} onClick={action} disabled={loading}
+                className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#444] transition-colors text-left disabled:opacity-40">
+                <span className="text-xl w-7 text-center flex-shrink-0">{icon}</span>
+                <div>
+                  <p className="text-sm font-medium">{title}</p>
+                  <p className="text-xs text-[#555] mt-0.5">{sub}</p>
+                </div>
+              </button>
+            ))}
           </div>
         )}
 
-        {/* ── Credentials form ── */}
+        {/* ── QR code ── */}
+        {mode === "qr" && (
+          <div className="space-y-4">
+            <div className="rounded-xl overflow-hidden bg-[#0a0a0a] border border-[#2a2a2a] aspect-square flex items-center justify-center">
+              {qrSrc
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={qrSrc} alt="TikTok QR" className="w-full h-full object-contain" />
+                : <span className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              }
+            </div>
+            <p className="text-xs text-[#555] text-center">Open TikTok app → Profile → ☰ → QR code → Scan</p>
+            <button onClick={back} className="w-full h-10 text-xs text-[#555] hover:text-white transition-colors">Back</button>
+          </div>
+        )}
+
+        {/* ── Credentials ── */}
         {mode === "creds" && (
           <form onSubmit={handleCredentials} className="space-y-3">
-            <input
-              type="tel" autoFocus required value={phone}
-              onChange={e => setPhone(e.target.value)}
-              placeholder="Phone number  (+972 52 659 8196)"
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors"
-            />
+            {/* Country + number row */}
+            <div className="flex gap-2">
+              <select
+                value={country}
+                onChange={e => setCountry(e.target.value)}
+                className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-2 py-2.5 text-sm text-white focus:outline-none focus:border-[#555] transition-colors flex-shrink-0"
+              >
+                {COUNTRY_CODES.map(c => (
+                  <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                ))}
+              </select>
+              <input
+                type="tel"
+                inputMode="numeric"
+                autoFocus
+                required
+                value={localNum}
+                onChange={e => setLocalNum(e.target.value.replace(/\D/g, ""))}
+                placeholder="5261234567"
+                className={inputCls}
+              />
+            </div>
+            <p className="text-[11px] text-[#444]">Digits only — e.g. 5261234567 (no spaces or dashes)</p>
             <input
               type="password" required value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="Password"
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors"
+              className={inputCls}
             />
             {error && <p className="text-xs text-[#f55]">{error}</p>}
-            <button type="submit" disabled={loading || !phone.trim() || !password.trim()}
+            <button type="submit" disabled={loading || localNum.length < 6 || !password.trim()}
               className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-[#e5e5e5] disabled:opacity-40 transition-colors">
               {loading ? "Starting…" : "Log in"}
             </button>
-            <button type="button" onClick={() => { setMode("pick"); setError(""); }}
-              className="w-full h-10 text-xs text-[#555] hover:text-white transition-colors">
-              Back
-            </button>
+            <button type="button" onClick={back} className="w-full h-10 text-xs text-[#555] hover:text-white transition-colors">Back</button>
           </form>
         )}
 
-        {/* ── Waiting (silent login running) ── */}
+        {/* ── Session ID ── */}
+        {mode === "session" && (
+          <form onSubmit={handleSessionId} className="space-y-3">
+            <div className="rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] p-3 space-y-1">
+              <p className="text-xs font-medium text-[#888]">How to get your session ID:</p>
+              <ol className="text-xs text-[#555] space-y-0.5 list-decimal list-inside">
+                <li>Open TikTok in Chrome on a computer</li>
+                <li>Press F12 → Application → Cookies → tiktok.com</li>
+                <li>Find <span className="text-[#888] font-mono">sessionid</span> and copy its value</li>
+              </ol>
+            </div>
+            <input
+              autoFocus required
+              value={sessionId}
+              onChange={e => setSessionId(e.target.value.trim())}
+              placeholder="Paste sessionid value here"
+              className={inputCls + " font-mono text-xs"}
+            />
+            {error && <p className="text-xs text-[#f55]">{error}</p>}
+            <button type="submit" disabled={loading || sessionId.length < 10}
+              className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-[#e5e5e5] disabled:opacity-40 transition-colors">
+              {loading ? "Saving…" : "Connect"}
+            </button>
+            <button type="button" onClick={back} className="w-full h-10 text-xs text-[#555] hover:text-white transition-colors">Back</button>
+          </form>
+        )}
+
+        {/* ── Waiting ── */}
         {mode === "waiting" && (
           <div className="flex flex-col items-center gap-3 py-4">
             <span className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
@@ -317,15 +451,18 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
           </div>
         )}
 
-        {/* ── OTP (TikTok requires extra verification) ── */}
+        {/* ── OTP ── */}
         {mode === "otp" && (
           <form onSubmit={handleOtp} className="space-y-3">
-            <p className="text-xs text-[#555]">TikTok sent a code to <span className="text-[#aaa]">{phone}</span></p>
+            <p className="text-xs text-[#555]">TikTok sent a code to <span className="text-[#aaa]">{fullPhone}</span></p>
             <input
-              type="number" autoFocus required value={otp}
-              onChange={e => setOtp(e.target.value)}
+              autoFocus required
+              inputMode="numeric"
+              value={otp}
+              onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
               placeholder="123456"
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] tracking-widest transition-colors"
+              maxLength={6}
+              className={inputCls + " tracking-widest text-center text-lg"}
             />
             {error && <p className="text-xs text-[#f55]">{error}</p>}
             <button type="submit" disabled={loading || otp.length < 4}
@@ -350,14 +487,14 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
               <XCircle className="w-4 h-4 text-[#f55] flex-shrink-0" />
               <p className="text-xs text-[#f55]">{error || "Login failed"}</p>
             </div>
-            <button onClick={() => { setMode("pick"); setError(""); }}
+            <button onClick={back}
               className="w-full h-10 rounded-xl border border-[#222] text-sm text-[#555] hover:text-white transition-colors">
               Try again
             </button>
           </div>
         )}
 
-        {mode !== "done" && mode !== "waiting" && (
+        {mode !== "done" && mode !== "waiting" && mode !== "qr" && (
           <button onClick={onClose}
             className="w-full h-10 rounded-xl border border-[#1a1a1a] text-xs text-[#444] hover:text-[#888] transition-colors">
             Cancel
