@@ -17,10 +17,15 @@ const SEL = {
   ],
   input: [
     '[data-e2e="message-input"]',
+    '[data-e2e="chat-input"]',
+    '.DraftEditor-root',
+    '[data-contents="true"]',
     '[contenteditable="true"]',
     'div[contenteditable]',
     '[placeholder*="message" i]',
     '[placeholder*="Send" i]',
+    '[placeholder*="Type" i]',
+    'textarea',
   ],
   sendBtn: [
     '[data-e2e="send-message-btn"]',
@@ -68,10 +73,17 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
       throw new Error(`Message button not found — page: "${title}" url: ${url}`);
     }
     await btn.click();
-    await page.waitForTimeout(2000);
+    // Wait for navigation or DM panel to open
+    await page.waitForTimeout(3000);
 
-    const input = await firstVisible(page, SEL.input, 12_000).catch(() => null);
-    if (!input) throw new Error(`Message input not found for ${handle}`);
+    const input = await firstVisible(page, SEL.input, 15_000).catch(() => null);
+    if (!input) {
+      const shot = await page.screenshot({ type: 'png' }).catch(() => null);
+      if (shot) fs.writeFileSync('/tmp/tiktok-debug.png', shot);
+      const url = page.url();
+      const title = await page.title().catch(() => '?');
+      throw new Error(`Message input not found — page: "${title}" url: ${url}`);
+    }
     await input.click();
     await input.type(message, { delay: 30 });
 
