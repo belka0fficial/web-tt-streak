@@ -31,15 +31,21 @@ export default function TikTokBrowserPage() {
       .catch(() => setPhase("error"));
 
     // Screenshot refresh
-    const screenshotLoop = setInterval(async () => {
-      const r = await fetch(`/api/auth/qr?t=${Date.now()}`, { headers }).catch(() => null);
-      if (!r?.ok) return;
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      if (blobRef.current) URL.revokeObjectURL(blobRef.current);
-      blobRef.current = url;
-      setImgSrc(url);
-    }, 300);
+    let running = true;
+    const screenshotLoop = async () => {
+      while (running) {
+        const r = await fetch(`/api/auth/qr?t=${Date.now()}`, { headers }).catch(() => null);
+        if (r?.ok) {
+          const blob = await r.blob();
+          const url = URL.createObjectURL(blob);
+          if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+          blobRef.current = url;
+          setImgSrc(url);
+        }
+        await new Promise(res => setTimeout(res, 150));
+      }
+    };
+    screenshotLoop();
 
     // Poll for login completion
     const statusLoop = setInterval(async () => {
@@ -59,21 +65,30 @@ export default function TikTokBrowserPage() {
       }
     }, 2000);
 
-    return () => { clearInterval(screenshotLoop); clearInterval(statusLoop); };
+    return () => { running = false; clearInterval(statusLoop); };
   }, [token]);
 
-  // Forward clicks → Playwright
-  const handleClick = useCallback((e: React.MouseEvent<HTMLImageElement>) => {
+  const sendClick = useCallback((clientX: number, clientY: number) => {
     if (!token || !imgRef.current) return;
     const r = imgRef.current.getBoundingClientRect();
-    const x = Math.round(((e.clientX - r.left) / r.width)  * VIEWPORT.width);
-    const y = Math.round(((e.clientY - r.top)  / r.height) * VIEWPORT.height);
+    const x = Math.round(((clientX - r.left) / r.width)  * VIEWPORT.width);
+    const y = Math.round(((clientY - r.top)  / r.height) * VIEWPORT.height);
     fetch("/api/auth/input", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ type: "click", x, y }),
     });
   }, [token]);
+
+  const handleClick = useCallback((e: React.MouseEvent<HTMLImageElement>) => {
+    sendClick(e.clientX, e.clientY);
+  }, [sendClick]);
+
+  const handleTouch = useCallback((e: React.TouchEvent<HTMLImageElement>) => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    sendClick(t.clientX, t.clientY);
+  }, [sendClick]);
 
   // Forward keyboard → Playwright
   useEffect(() => {
@@ -138,9 +153,10 @@ export default function TikTokBrowserPage() {
             src={imgSrc}
             alt="TikTok"
             onClick={handleClick}
+            onTouchEnd={handleTouch}
             onWheel={handleWheel}
             className="w-full max-w-[480px] cursor-pointer select-none"
-            style={{ imageRendering: "crisp-edges", display: "block" }}
+            style={{ imageRendering: "crisp-edges", display: "block", touchAction: "none" }}
             draggable={false}
           />
         )}
