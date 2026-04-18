@@ -343,10 +343,8 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
         {mode === "pick" && (
           <div className="space-y-2">
             {[
-              { icon: "📱", title: "QR code", sub: "Scan with your TikTok app — no password needed", action: handleQR },
               { icon: "🔑", title: "Phone + password", sub: "Logs in silently in the background", action: () => setMode("creds") },
               { icon: "🍪", title: "Paste session ID", sub: "Copy sessionid from browser DevTools", action: () => setMode("session") },
-              { icon: "🌐", title: "Open browser", sub: "Interact with TikTok login manually", action: openBrowserPopup },
             ].map(({ icon, title, sub, action }) => (
               <button key={title} onClick={action} disabled={loading}
                 className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#444] transition-colors text-left disabled:opacity-40">
@@ -826,15 +824,22 @@ export default function Page() {
             </div>
             <span className="text-xs text-[#444]">{msg.length} chars</span>
           </div>
-          <div className="px-4 py-3.5">
+          <div className="px-4 pt-3.5 pb-3">
             <textarea
               value={msg}
               onChange={e => setMsg(e.target.value)}
-              onBlur={() => patch({ message: msg })}
               rows={3}
               className="w-full bg-transparent text-sm text-[#bbb] placeholder:text-[#333] resize-none focus:outline-none leading-relaxed"
               placeholder="Enter your streak message…"
             />
+          </div>
+          <div className="px-4 pb-3.5">
+            <button
+              onClick={() => patch({ message: msg })}
+              className="h-9 px-4 rounded-lg bg-[#111] border border-[#2a2a2a] text-xs font-medium text-white hover:bg-[#1a1a1a] hover:border-[#444] transition-colors"
+            >
+              Save message
+            </button>
           </div>
         </section>
 
