@@ -111,31 +111,21 @@ The app has a built-in scheduler. You can add a Railway Cron Job as a belt-and-s
 
 ## Install on your phone
 
-### Android — download the APK directly
+### Android — get the APK from PWABuilder (free, 2 minutes)
 
-1. Go to the [Releases](../../releases) page of this repo
-2. Download `StreakSaver.apk`
-3. Open it on your Android phone
-4. If prompted, tap **Settings → Allow from this source**
-5. Tap **Install**
+1. Go to [pwabuilder.com](https://www.pwabuilder.com)
+2. Paste your Railway app URL and click **Start**
+3. Click **Package for stores** → **Android** → **Download Package**
+4. You get a ready `.apk` file — send it to your phone and tap to install
+5. If Android asks, tap **Settings → Allow from this source** once
 
-### iPhone — install the IPA with AltStore (free, no Apple account needed)
-
-1. Install [AltStore](https://altstore.io) on your iPhone (one-time setup, 5 min)
-2. Go to the [Releases](../../releases) page of this repo
-3. Download `StreakSaver.ipa` to your phone
-4. Open AltStore → tap **+** → select the `.ipa` file
-
-> AltStore is free and requires no developer account. It re-signs the app automatically.  
-> The app stays installed permanently on your device.
-
-### iPhone — PWA (simplest, no install needed)
+### iPhone — Add to Home Screen (no install needed)
 
 1. Open your Railway URL in **Safari**
-2. Tap the **Share** button (bottom center, box with arrow)
-3. Scroll down → **Add to Home Screen** → **Add**
+2. Tap the **Share** button (bottom center)
+3. **Add to Home Screen** → **Add**
 
-Opens full-screen like a native app, no AltStore needed.
+Opens full-screen like a native app with its own icon. This is the recommended iPhone method — no App Store, no tools, instant.
 
 ---
 
