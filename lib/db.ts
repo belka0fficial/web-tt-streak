@@ -16,10 +16,13 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export async function getSettings(userId: string): Promise<Settings> {
   const sb = serverSupabase();
-  const [{ data: s }, { data: friends }] = await Promise.all([
+  const [{ data: s, error: sErr }, { data: friends, error: fErr }] = await Promise.all([
     sb.from('settings').select('*').eq('user_id', userId).single(),
     sb.from('friends').select('*').eq('user_id', userId),
   ]);
+  console.log('[getSettings] userId:', userId);
+  console.log('[getSettings] settings row:', s ? JSON.stringify({ schedule_enabled: s.schedule_enabled, schedule_time: s.schedule_time, message: s.message }) : `null (err: ${sErr?.message})`);
+  console.log('[getSettings] friends:', JSON.stringify(friends), fErr?.message ?? '');
   if (!s) return {
     ...DEFAULT_SETTINGS,
     friends: (friends ?? []).map(f => ({ id: f.id, name: f.name, handle: f.handle, active: f.active })),
