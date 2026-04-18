@@ -509,6 +509,7 @@ export default function Page() {
   // Settings state (hydrated from API on first load)
   const [scheduleOn,   setScheduleOn]   = useState(false);
   const [scheduleTime, setScheduleTime] = useState("09:00");
+  const [timezone,     setTimezone]     = useState("UTC");
   const [msg,          setMsg]          = useState("🐿️🐿️🐿️");
   const [friends,      setFriends]      = useState<Friend[]>([]);
 
@@ -548,6 +549,12 @@ export default function Page() {
       setScheduleTime(data.settings.schedule?.time ?? "09:00");
       setFriends(data.settings.friends ?? []);
       setMsg(data.settings.message ?? "🐿️🐿️🐿️");
+      // Detect browser timezone and save if it differs from what's stored
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      setTimezone(detected);
+      if (detected && detected !== (data.settings.timezone ?? "UTC")) {
+        patch({ timezone: detected });
+      }
     }
   }
 
@@ -588,12 +595,12 @@ export default function Page() {
 
   async function handleScheduleToggle(on: boolean) {
     setScheduleOn(on);
-    await patch({ schedule: { enabled: on, time: scheduleTime } });
+    await patch({ schedule: { enabled: on, time: scheduleTime }, timezone });
   }
 
   async function handleTimeChange(time: string) {
     setScheduleTime(time);
-    await patch({ schedule: { enabled: scheduleOn, time } });
+    await patch({ schedule: { enabled: scheduleOn, time }, timezone });
   }
 
   async function saveFriends(list: Friend[]) {
@@ -746,6 +753,7 @@ export default function Page() {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-semibold tabular-nums">{scheduleTime}</span>
+              <span className="text-[10px] text-[#444]">{timezone.replace(/_/g, " ")}</span>
               <ChevronRight className="w-3.5 h-3.5 text-[#333] group-hover:text-[#555] transition-colors" />
             </div>
           </button>

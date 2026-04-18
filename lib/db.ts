@@ -3,6 +3,7 @@ import { serverSupabase } from './supabase';
 export interface Friend { id: string; name: string; handle: string; active: boolean; }
 export interface Settings {
   schedule: { enabled: boolean; time: string };
+  timezone: string;
   friends: Friend[];
   message: string;
 }
@@ -10,6 +11,7 @@ export interface LogEntry { id: string; ts: number; ok: boolean; sent: number; t
 
 export const DEFAULT_SETTINGS: Settings = {
   schedule: { enabled: false, time: '09:00' },
+  timezone: 'UTC',
   friends: [],
   message: '🐿️🐿️🐿️',
 };
@@ -28,6 +30,7 @@ export async function getSettings(userId: string): Promise<Settings> {
   };
   return {
     schedule: { enabled: s.schedule_enabled, time: s.schedule_time },
+    timezone: s.timezone ?? 'UTC',
     friends: (friends ?? []).map(f => ({ id: f.id, name: f.name, handle: f.handle, active: f.active })),
     message: s.message,
   };
@@ -43,6 +46,7 @@ export async function patchSettings(userId: string, patch: Partial<Settings>) {
       user_id:          userId,
       schedule_enabled: patch.schedule?.enabled ?? cur?.schedule_enabled ?? false,
       schedule_time:    patch.schedule?.time    ?? cur?.schedule_time    ?? '09:00',
+      timezone:         patch.timezone          ?? cur?.timezone         ?? 'UTC',
       message:          patch.message           ?? cur?.message          ?? '🐿️🐿️🐿️',
       tiktok_cookies:   cur?.tiktok_cookies     ?? null,
     };
@@ -98,12 +102,27 @@ export async function addLog(userId: string, entry: Omit<LogEntry, 'id' | 'ts'>)
   await serverSupabase().from('logs').insert({ user_id: userId, ts: new Date().toISOString(), ...entry });
 }
 
-// Called by cron every minute — returns users whose schedule fires right now
+// Called by cron every minute — returns users whose schedule fires right now (in their timezone)
 export async function getScheduledUsers() {
-  const now = new Date();
-  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const { data } = await serverSupabase()
-    .from('settings').select('user_id, tiktok_cookies')
-    .eq('schedule_enabled', true).eq('schedule_time', time);
-  return data ?? [];
+    .from('settings').select('user_id, tiktok_cookies, schedule_time, timezone')
+    .eq('schedule_enabled', true);
+  if (!data) return [];
+
+  const now = new Date();
+  return data.filter(u => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: u.timezone || 'UTC',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(now);
+      const hour   = parts.find(p => p.type === 'hour')?.value   ?? '00';
+      const minute = parts.find(p => p.type === 'minute')?.value ?? '00';
+      return `${hour}:${minute}` === u.schedule_time;
+    } catch {
+      return false;
+    }
+  });
 }
