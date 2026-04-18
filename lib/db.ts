@@ -51,10 +51,20 @@ export async function getCookies(userId: string): Promise<object[] | null> {
 }
 
 export async function setCookies(userId: string, cookies: object[]) {
-  await serverSupabase().from('settings').upsert(
-    { user_id: userId, tiktok_cookies: cookies },
-    { onConflict: 'user_id' }
-  );
+  const sb = serverSupabase();
+  // Update if row exists, otherwise insert with safe defaults
+  const { data: existing } = await sb.from('settings').select('user_id').eq('user_id', userId).single();
+  if (existing) {
+    await sb.from('settings').update({ tiktok_cookies: cookies }).eq('user_id', userId);
+  } else {
+    await sb.from('settings').insert({
+      user_id: userId,
+      tiktok_cookies: cookies,
+      schedule_enabled: false,
+      schedule_time: '09:00',
+      message: '🐿️🐿️🐿️',
+    });
+  }
 }
 
 export async function getLogs(userId: string): Promise<LogEntry[]> {

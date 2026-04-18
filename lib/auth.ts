@@ -22,8 +22,14 @@ async function makeContext() {
     headless: true,
     args: [
       '--no-sandbox',
+      '--disable-setuid-sandbox',
       '--disable-blink-features=AutomationControlled',
       '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--disable-extensions',
+      '--disable-software-rasterizer',
+      '--single-process',          // reduces memory on Railway containers
     ],
   });
   const ctx = await browser.newContext({
@@ -82,7 +88,8 @@ export async function loginWithCredentials(userId: string, phone: string, passwo
   activeCtx = ctx;
 
   try {
-    // Go straight to password login URL
+    // Small delay to let the browser fully initialize before navigating
+    await new Promise(r => setTimeout(r, 500));
     await page.goto('https://www.tiktok.com/login/phone-or-email/password', {
       waitUntil: 'domcontentloaded', timeout: 30_000,
     });
