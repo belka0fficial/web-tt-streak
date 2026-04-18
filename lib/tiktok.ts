@@ -87,14 +87,20 @@ export async function runAutomation(userId: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.addCookies(cookies as any);
 
+    const errors: string[] = [];
     for (const friend of active) {
       try { await sendDM(ctx, friend.handle, settings.message); sent++; }
-      catch (e) { console.error(`[tiktok] failed ${friend.handle}:`, e); }
+      catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        errors.push(`${friend.handle}: ${msg}`);
+        console.error(`[tiktok] failed ${friend.handle}:`, e);
+      }
     }
 
     const ok = sent === total;
-    states.set(userId, { status: ok ? 'done' : 'error', error: ok ? null : `${total - sent} failed` });
-    await addLog(userId, { ok, sent, total, detail: ok ? undefined : `${total - sent} failed` });
+    const detail = errors.length ? errors.join(' | ') : undefined;
+    states.set(userId, { status: ok ? 'done' : 'error', error: ok ? null : detail ?? 'failed' });
+    await addLog(userId, { ok, sent, total, detail });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     states.set(userId, { status: 'error', error: msg });
