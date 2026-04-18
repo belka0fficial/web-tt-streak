@@ -362,10 +362,14 @@ export default function Page() {
   }
 
   useEffect(() => {
+    const hasHashToken = window.location.hash.includes("access_token");
+
     const { data: { subscription } } = getSupabase().auth.onAuthStateChange((event, s) => {
       if (s) {
         setSession(s);
-      } else if (event === "INITIAL_SESSION" || event === "SIGNED_OUT") {
+      } else if (event === "SIGNED_OUT") {
+        window.location.href = "/login";
+      } else if (event === "INITIAL_SESSION" && !hasHashToken) {
         window.location.href = "/login";
       }
     });

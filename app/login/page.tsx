@@ -41,10 +41,7 @@ export default function LoginPage() {
 
   async function oAuth(provider: "google" | "github") {
     setError("");
-    const { error } = await getSupabase().auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
+    const { error } = await getSupabase().auth.signInWithOAuth({ provider });
     if (error) setError(error.message);
   }
 
