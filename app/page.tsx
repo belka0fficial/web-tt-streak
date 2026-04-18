@@ -362,25 +362,13 @@ export default function Page() {
   }
 
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("code");
-
     const { data: { subscription } } = getSupabase().auth.onAuthStateChange((event, s) => {
       if (s) {
         setSession(s);
-        if (code) window.history.replaceState(null, "", "/");
-      } else if (event === "INITIAL_SESSION" && !code) {
-        window.location.href = "/login";
-      } else if (event === "SIGNED_OUT") {
+      } else if (event === "INITIAL_SESSION" || event === "SIGNED_OUT") {
         window.location.href = "/login";
       }
     });
-
-    if (code) {
-      getSupabase().auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) window.location.href = "/login";
-      });
-    }
-
     return () => subscription.unsubscribe();
   }, []);
 
