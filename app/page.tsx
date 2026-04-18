@@ -169,46 +169,48 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
   onSuccess: () => void;
   authFetch: AuthFetch;
 }) {
-  const [phase,   setPhase]   = useState<"starting" | "enter_phone" | "enter_otp" | "done" | "error">("starting");
-  const [phone,   setPhone]   = useState("");
-  const [otp,     setOtp]     = useState("");
-  const [error,   setError]   = useState("");
-  const [loading, setLoading] = useState(false);
+  const [mode,     setMode]     = useState<"pick" | "creds" | "otp" | "waiting" | "done" | "error">("pick");
+  const [phone,    setPhone]    = useState("");
+  const [password, setPassword] = useState("");
+  const [otp,      setOtp]      = useState("");
+  const [error,    setError]    = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    authFetch("/api/auth/start", { method: "POST" })
-      .then(r => r.json())
-      .then(d => setPhase(d.phase ?? "enter_phone"))
-      .catch(() => { setError("Failed to start"); setPhase("error"); });
-
-    const poll = setInterval(async () => {
+  function startPolling() {
+    pollRef.current = setInterval(async () => {
       const res = await authFetch("/api/auth/status").catch(() => null);
       if (!res?.ok) return;
       const d = await res.json();
       if (d.phase === "done") {
-        clearInterval(poll); setPhase("done");
+        clearInterval(pollRef.current!);
+        setMode("done");
         setTimeout(() => { onSuccess(); onClose(); }, 1000);
       } else if (d.phase === "error") {
-        clearInterval(poll); setError(d.error ?? "Login failed"); setPhase("error");
+        clearInterval(pollRef.current!);
+        setError(d.error ?? "Login failed");
+        setMode("error");
+      } else if (d.phase === "enter_otp" && mode !== "otp") {
+        setMode("otp");
       }
     }, 2000);
+  }
 
-    return () => clearInterval(poll);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  async function handlePhone(e: React.FormEvent) {
+  async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
     setError(""); setLoading(true);
-    const res = await authFetch("/api/auth/phone", {
+    const res = await authFetch("/api/auth/credentials", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, password }),
     }).catch(() => null);
     const d = await res?.json().catch(() => ({}));
-    if (!res?.ok) setError(d?.error ?? "Failed to send code");
-    else setPhase("enter_otp");
+    if (!res?.ok) { setError(d?.error ?? "Failed"); setLoading(false); return; }
     setLoading(false);
+    setMode("waiting");
+    startPolling();
   }
 
   async function handleOtp(e: React.FormEvent) {
@@ -224,6 +226,18 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
     setLoading(false);
   }
 
+  function openWebview() {
+    window.open("/auth/tiktok", "_blank", "width=430,height=900");
+    const handler = (e: MessageEvent) => {
+      if (e.data === "tiktok-connected") {
+        window.removeEventListener("message", handler);
+        onSuccess(); onClose();
+      }
+    };
+    window.addEventListener("message", handler);
+    onClose();
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80" onClick={onClose} />
@@ -232,78 +246,118 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
         <div>
           <h2 className="text-base font-semibold">Connect TikTok</h2>
           <p className="text-xs text-[#555] mt-0.5">
-            {phase === "enter_phone" && "Enter your TikTok phone number"}
-            {phase === "enter_otp"   && "Enter the code TikTok sent you"}
-            {phase === "starting"    && "Starting…"}
-            {phase === "done"        && "Connected!"}
-            {phase === "error"       && "Something went wrong"}
+            {mode === "pick"    && "Choose how to log in"}
+            {mode === "creds"   && "Enter your TikTok credentials"}
+            {mode === "waiting" && "Logging in…"}
+            {mode === "otp"     && "TikTok sent you a verification code"}
+            {mode === "done"    && "Connected!"}
+            {mode === "error"   && "Something went wrong"}
           </p>
         </div>
 
-        {phase === "starting" && (
-          <div className="flex justify-center py-6">
-            <span className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+        {/* ── Pick method ── */}
+        {mode === "pick" && (
+          <div className="space-y-2.5">
+            <button onClick={() => setMode("creds")}
+              className="w-full flex items-start gap-3.5 px-4 py-3.5 rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#444] transition-colors text-left">
+              <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-base">🔑</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Phone + password</p>
+                <p className="text-xs text-[#555] mt-0.5">Enter credentials — logs in silently in the background</p>
+              </div>
+            </button>
+
+            <button onClick={openWebview}
+              className="w-full flex items-start gap-3.5 px-4 py-3.5 rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#444] transition-colors text-left">
+              <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-base">🌐</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Open browser</p>
+                <p className="text-xs text-[#555] mt-0.5">Log in manually in a separate window</p>
+              </div>
+            </button>
           </div>
         )}
 
-        {phase === "enter_phone" && (
-          <form onSubmit={handlePhone} className="space-y-3">
+        {/* ── Credentials form ── */}
+        {mode === "creds" && (
+          <form onSubmit={handleCredentials} className="space-y-3">
             <input
               type="tel" autoFocus required value={phone}
               onChange={e => setPhone(e.target.value)}
-              placeholder="+972 52 659 8196"
+              placeholder="Phone number  (+972 52 659 8196)"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors"
+            />
+            <input
+              type="password" required value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Password"
               className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors"
             />
             {error && <p className="text-xs text-[#f55]">{error}</p>}
-            <button type="submit" disabled={loading || !phone.trim()}
+            <button type="submit" disabled={loading || !phone.trim() || !password.trim()}
               className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-[#e5e5e5] disabled:opacity-40 transition-colors">
-              {loading ? "Sending…" : "Send code"}
+              {loading ? "Starting…" : "Log in"}
+            </button>
+            <button type="button" onClick={() => { setMode("pick"); setError(""); }}
+              className="w-full h-10 text-xs text-[#555] hover:text-white transition-colors">
+              Back
             </button>
           </form>
         )}
 
-        {phase === "enter_otp" && (
+        {/* ── Waiting (silent login running) ── */}
+        {mode === "waiting" && (
+          <div className="flex flex-col items-center gap-3 py-4">
+            <span className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            <p className="text-xs text-[#555]">Logging in to TikTok…</p>
+          </div>
+        )}
+
+        {/* ── OTP (TikTok requires extra verification) ── */}
+        {mode === "otp" && (
           <form onSubmit={handleOtp} className="space-y-3">
-            <p className="text-xs text-[#555]">Sent to <span className="text-[#aaa]">{phone}</span></p>
+            <p className="text-xs text-[#555]">TikTok sent a code to <span className="text-[#aaa]">{phone}</span></p>
             <input
               type="number" autoFocus required value={otp}
               onChange={e => setOtp(e.target.value)}
               placeholder="123456"
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors tracking-widest"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] tracking-widest transition-colors"
             />
             {error && <p className="text-xs text-[#f55]">{error}</p>}
             <button type="submit" disabled={loading || otp.length < 4}
               className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-[#e5e5e5] disabled:opacity-40 transition-colors">
               {loading ? "Verifying…" : "Verify"}
             </button>
-            <button type="button" onClick={() => { setPhase("enter_phone"); setOtp(""); setError(""); }}
-              className="w-full h-10 text-xs text-[#555] hover:text-white transition-colors">
-              Wrong number? Go back
-            </button>
           </form>
         )}
 
-        {phase === "done" && (
+        {/* ── Done ── */}
+        {mode === "done" && (
           <div className="flex items-center justify-center gap-2 py-4">
             <CheckCircle2 className="w-5 h-5 text-[#3ecf8e]" />
             <p className="text-sm text-[#3ecf8e] font-medium">TikTok connected!</p>
           </div>
         )}
 
-        {phase === "error" && (
+        {/* ── Error ── */}
+        {mode === "error" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <XCircle className="w-4 h-4 text-[#f55] flex-shrink-0" />
               <p className="text-xs text-[#f55]">{error || "Login failed"}</p>
             </div>
-            <button onClick={() => { setPhase("starting"); setError(""); authFetch("/api/auth/start", { method: "POST" }).then(r => r.json()).then(d => setPhase(d.phase ?? "enter_phone")); }}
+            <button onClick={() => { setMode("pick"); setError(""); }}
               className="w-full h-10 rounded-xl border border-[#222] text-sm text-[#555] hover:text-white transition-colors">
               Try again
             </button>
           </div>
         )}
 
-        {phase !== "done" && (
+        {mode !== "done" && mode !== "waiting" && (
           <button onClick={onClose}
             className="w-full h-10 rounded-xl border border-[#1a1a1a] text-xs text-[#444] hover:text-[#888] transition-colors">
             Cancel
@@ -330,6 +384,7 @@ export default function Page() {
 
   // UI state
   const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const [loginOpen,  setLoginOpen]  = useState(false);
   const [adding,    setAdding]    = useState(false);
   const [newName,   setNewName]   = useState("");
   const [newHandle, setNewHandle] = useState("");
@@ -447,6 +502,13 @@ export default function Page() {
           onClose={() => setTimePickerOpen(false)}
         />
       )}
+      {loginOpen && (
+        <LoginModal
+          authFetch={authFetch}
+          onSuccess={() => { setSessionOk(true); loadStatus(); }}
+          onClose={() => setLoginOpen(false)}
+        />
+      )}
 
       <div className="max-w-[480px] mx-auto px-5 pt-12 pb-24 space-y-4">
 
@@ -476,16 +538,7 @@ export default function Page() {
         <section className="border border-[#1e1e1e] rounded-xl overflow-hidden">
           {/* Session row */}
           <button
-            onClick={() => {
-              window.open("/auth/tiktok", "_blank");
-              const handler = (e: MessageEvent) => {
-                if (e.data === "tiktok-connected") {
-                  window.removeEventListener("message", handler);
-                  setSessionOk(true); loadStatus();
-                }
-              };
-              window.addEventListener("message", handler);
-            }}
+            onClick={() => setLoginOpen(true)}
             className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-[#1a1a1a] text-left hover:bg-[#0a0a0a] transition-colors"
           >
             <div className={clsx(

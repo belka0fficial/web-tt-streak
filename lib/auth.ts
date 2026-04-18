@@ -17,6 +17,34 @@ function closeBrowser() {
   activePage = null;
 }
 
+async function makeContext() {
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-dev-shm-usage',
+    ],
+  });
+  const ctx = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+  });
+  await ctx.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver',  { get: () => undefined });
+    Object.defineProperty(navigator, 'plugins',    { get: () => [1, 2, 3] });
+    Object.defineProperty(navigator, 'languages',  { get: () => ['en-US', 'en'] });
+    // @ts-ignore
+    delete window.__playwright;
+    // @ts-ignore
+    delete window.__pw_manual;
+  });
+  return ctx;
+}
+
 function pollForSession(userId: string) {
   const ctx = activeCtx!;
   const poll = setInterval(async () => {
@@ -42,124 +70,106 @@ function pollForSession(userId: string) {
   }, 5 * 60_000);
 }
 
-export async function startLogin(userId: string): Promise<void> {
+// ── Silent credentials login ───────────────────────────────────────────────────
+// Runs Playwright fully in the background — no screenshot streaming needed.
+export async function loginWithCredentials(userId: string, phone: string, password: string): Promise<void> {
   closeBrowser();
   phase = 'starting'; loginError = null; activeUserId = userId;
 
-  const browser = await chromium.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-blink-features=AutomationControlled',
-      '--disable-dev-shm-usage',
-    ],
-  });
-  const ctx = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
-    viewport: { width: 390, height: 844 },
-    deviceScaleFactor: 2,
-    isMobile: true,
-    hasTouch: true,
-  });
-  await ctx.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver',  { get: () => undefined });
-    Object.defineProperty(navigator, 'plugins',    { get: () => [1, 2, 3] });
-    Object.defineProperty(navigator, 'languages',  { get: () => ['en-US', 'en'] });
-    // @ts-ignore
-    delete window.__playwright;
-    // @ts-ignore
-    delete window.__pw_manual;
-  });
-
+  const ctx = await makeContext();
   const page = await ctx.newPage();
   activePage = page;
   activeCtx = ctx;
 
-  await page.goto('https://www.tiktok.com/login/phone-or-email', {
-    waitUntil: 'domcontentloaded', timeout: 30_000,
-  });
-  await page.waitForTimeout(2000);
-  phase = 'enter_phone';
-}
+  try {
+    // Go straight to password login URL
+    await page.goto('https://www.tiktok.com/login/phone-or-email/password', {
+      waitUntil: 'domcontentloaded', timeout: 30_000,
+    });
+    await page.waitForTimeout(2000);
 
-export async function submitPhone(phone: string): Promise<void> {
-  if (!activePage || phase !== 'enter_phone') throw new Error('No active login session');
-  const page = activePage;
+    // Parse country code + local number
+    const cleaned = phone.replace(/[\s\-()]/g, '');
+    let countryCode = '';
+    let localNumber = cleaned;
+    if (cleaned.startsWith('+')) {
+      const m = cleaned.match(/^\+(\d{1,3})(.+)$/);
+      if (m) { countryCode = m[1]; localNumber = m[2]; }
+    }
 
-  // Parse country code + local number from e.g. "+972 052 659 8196"
-  const cleaned = phone.replace(/[\s\-()]/g, '');
-  let countryCode = '';
-  let localNumber = cleaned;
-  if (cleaned.startsWith('+')) {
-    const m = cleaned.match(/^\+(\d{1,3})(.+)$/);
-    if (m) { countryCode = m[1]; localNumber = m[2]; }
-  }
+    // Handle country code dropdown if present
+    if (countryCode) {
+      const countryBtn = page.locator([
+        '[data-e2e="phoneNumber-enter"] button',
+        'button[class*="CountryCode" i]',
+        'button[class*="country" i]',
+        '[class*="PhoneNumber"] button',
+      ].join(', ')).first();
 
-  // Try to open country code dropdown and select the right country
-  if (countryCode) {
-    const countryBtn = page.locator([
-      '[data-e2e="phoneNumber-enter"] button',
-      'button[class*="CountryCode" i]',
-      'button[class*="country" i]',
-      '[class*="PhoneNumber"] button',
-    ].join(', ')).first();
-
-    if (await countryBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await countryBtn.click();
-      await page.waitForTimeout(600);
-
-      // Type country code in search box
-      const searchInput = page.locator('input[placeholder*="search" i], input[placeholder*="country" i]').first();
-      if (await searchInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await searchInput.fill(countryCode);
+      if (await countryBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await countryBtn.click();
+        await page.waitForTimeout(600);
+        const searchInput = page.locator('input[placeholder*="search" i], input[placeholder*="country" i]').first();
+        if (await searchInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await searchInput.fill(countryCode);
+          await page.waitForTimeout(500);
+        }
+        const option = page.locator(`[data-value="${countryCode}"], li:has-text("+${countryCode}")`).first();
+        if (await option.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await option.click();
+        } else {
+          await page.keyboard.press('ArrowDown');
+          await page.keyboard.press('Enter');
+        }
         await page.waitForTimeout(500);
       }
-
-      // Click matching option
-      const option = page.locator(`[data-value="${countryCode}"], li:has-text("+${countryCode}")`).first();
-      if (await option.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await option.click();
-      } else {
-        await page.keyboard.press('ArrowDown');
-        await page.keyboard.press('Enter');
-      }
-      await page.waitForTimeout(500);
     }
+
+    // Fill phone number
+    const phoneInput = page.locator([
+      'input[name="mobile"]',
+      'input[type="tel"]',
+      'input[placeholder*="phone" i]',
+      'input[placeholder*="number" i]',
+    ].join(', ')).first();
+    await phoneInput.waitFor({ timeout: 10_000 });
+    await phoneInput.click();
+    await phoneInput.pressSequentially(localNumber, { delay: 80 });
+
+    // Fill password
+    const passInput = page.locator([
+      'input[type="password"]',
+      'input[name="password"]',
+      'input[placeholder*="password" i]',
+    ].join(', ')).first();
+    await passInput.waitFor({ timeout: 5_000 });
+    await passInput.click();
+    await passInput.pressSequentially(password, { delay: 60 });
+
+    // Submit
+    const loginBtn = page.locator([
+      '[data-e2e="login-button"]',
+      'button[type="submit"]',
+      'button:has-text("Log in")',
+    ].join(', ')).first();
+    await loginBtn.click({ force: true, timeout: 8_000 });
+
+    await page.waitForTimeout(2000);
+    phase = 'enter_otp'; // may need OTP — poll will catch 'done' if not
+    pollForSession(userId);
+  } catch (err: any) {
+    phase = 'error';
+    loginError = err?.message ?? 'Login failed';
+    closeBrowser();
   }
-
-  // Fill local phone number
-  const phoneInput = page.locator([
-    'input[name="mobile"]',
-    'input[type="tel"]',
-    'input[placeholder*="phone" i]',
-    'input[placeholder*="number" i]',
-  ].join(', ')).first();
-  await phoneInput.waitFor({ timeout: 10_000 });
-  await phoneInput.click();
-  await phoneInput.pressSequentially(localNumber, { delay: 80 });
-
-  // Wait up to 5s for button to become enabled
-  await page.waitForFunction(() => {
-    const btn = document.querySelector('[data-e2e="send-code-button"]');
-    return btn && !btn.hasAttribute('disabled');
-  }, undefined, { timeout: 5000 }).catch(() => {});
-
-  // Click send code (force in case still technically "disabled" but visually ok)
-  const sendBtn = page.locator('[data-e2e="send-code-button"]').first();
-  await sendBtn.click({ force: true, timeout: 5000 }).catch(async () => {
-    await phoneInput.press('Enter');
-  });
-
-  await page.waitForTimeout(1500);
-  phase = 'enter_otp';
 }
 
+// ── OTP (used after credentials login if TikTok requires one) ─────────────────
 export async function submitOtp(otp: string): Promise<void> {
-  if (!activePage || phase !== 'enter_otp') throw new Error('No active login session');
+  if (!activePage) throw new Error('No active login session');
   const page = activePage;
   const userId = activeUserId!;
 
-  // Fill OTP
   const otpInput = page.locator([
     '[data-e2e="verification-code-input"]',
     'input[name="code"]',
@@ -170,7 +180,6 @@ export async function submitOtp(otp: string): Promise<void> {
   await otpInput.waitFor({ timeout: 10_000 });
   await otpInput.fill(otp);
 
-  // Click login / confirm button
   const loginBtn = page.locator([
     '[data-e2e="login-button"]',
     'button[type="submit"]',
@@ -182,6 +191,23 @@ export async function submitOtp(otp: string): Promise<void> {
 
   await page.waitForTimeout(2000);
   pollForSession(userId);
+}
+
+// ── Interactive popup (fallback) ───────────────────────────────────────────────
+export async function startLogin(userId: string): Promise<void> {
+  closeBrowser();
+  phase = 'starting'; loginError = null; activeUserId = userId;
+
+  const ctx = await makeContext();
+  const page = await ctx.newPage();
+  activePage = page;
+  activeCtx = ctx;
+
+  await page.goto('https://www.tiktok.com/login/phone-or-email', {
+    waitUntil: 'domcontentloaded', timeout: 30_000,
+  });
+  await page.waitForTimeout(2000);
+  phase = 'enter_phone';
 }
 
 export async function getLoginScreenshot(): Promise<Buffer | null> {
