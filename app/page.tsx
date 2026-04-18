@@ -171,33 +171,48 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
 }) {
   const [phase, setPhase] = useState<"starting" | "waiting" | "done" | "error">("starting");
   const [error, setError] = useState("");
-  const [tick, setTick]   = useState(0); // bumped to refresh screenshot
+  const [qrSrc, setQrSrc] = useState("");
 
   useEffect(() => {
+    let imgInterval: ReturnType<typeof setInterval>;
+    let statusInterval: ReturnType<typeof setInterval>;
+    let currentBlobUrl = "";
+
     authFetch("/api/auth/start", { method: "POST" })
       .then(r => r.ok ? setPhase("waiting") : Promise.reject())
       .catch(() => { setError("Failed to start login"); setPhase("error"); });
 
-    // refresh screenshot every 1.5 s
-    const imgRefresh = setInterval(() => setTick(t => t + 1), 1500);
+    const fetchQr = async () => {
+      const res = await authFetch(`/api/auth/qr?t=${Date.now()}`).catch(() => null);
+      if (!res?.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setQrSrc(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
+      currentBlobUrl = url;
+    };
 
-    // poll completion every 2 s
-    const statusPoll = setInterval(async () => {
+    imgInterval = setInterval(fetchQr, 1500);
+
+    statusInterval = setInterval(async () => {
       const res = await authFetch("/api/auth/status").catch(() => null);
       if (!res?.ok) return;
       const data = await res.json();
       if (data.status === "done") {
-        clearInterval(statusPoll); clearInterval(imgRefresh);
+        clearInterval(statusInterval); clearInterval(imgInterval);
         setPhase("done");
         setTimeout(() => { onSuccess(); onClose(); }, 1000);
       } else if (data.status === "error") {
-        clearInterval(statusPoll); clearInterval(imgRefresh);
+        clearInterval(statusInterval); clearInterval(imgInterval);
         setError(data.error ?? "Login failed");
         setPhase("error");
       }
     }, 2000);
 
-    return () => { clearInterval(statusPoll); clearInterval(imgRefresh); };
+    return () => {
+      clearInterval(statusInterval);
+      clearInterval(imgInterval);
+      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -223,14 +238,12 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
         )}
 
         {phase === "waiting" && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={tick}
-            src={`/api/auth/qr?t=${tick}`}
-            alt="TikTok login"
-            className="w-full block"
-            style={{ imageRendering: "crisp-edges" }}
-          />
+          qrSrc
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={qrSrc} alt="TikTok login" className="w-full block" style={{ imageRendering: "crisp-edges" }} />
+            : <div className="flex items-center justify-center h-64 bg-[#080808]">
+                <span className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              </div>
         )}
 
         {phase === "done" && (
