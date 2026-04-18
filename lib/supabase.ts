@@ -14,11 +14,17 @@ export function getSupabase(): SupabaseClient {
   return _browser;
 }
 
-// Server client — new instance per call is fine (no persistent auth state needed)
+// Server client — force no-store so Next.js 14 never caches Supabase responses
 export function serverSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } }
+    {
+      auth: { persistSession: false },
+      global: {
+        fetch: (url: RequestInfo | URL, init?: RequestInit) =>
+          fetch(url, { ...init, cache: 'no-store' }),
+      },
+    }
   );
 }
