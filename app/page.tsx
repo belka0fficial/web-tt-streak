@@ -169,105 +169,145 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
   onSuccess: () => void;
   authFetch: AuthFetch;
 }) {
-  const [phase, setPhase] = useState<"starting" | "waiting" | "done" | "error">("starting");
-  const [error, setError] = useState("");
-  const [qrSrc, setQrSrc] = useState("");
+  const [phase,   setPhase]   = useState<"starting" | "enter_phone" | "enter_otp" | "done" | "error">("starting");
+  const [phone,   setPhone]   = useState("");
+  const [otp,     setOtp]     = useState("");
+  const [error,   setError]   = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    let imgInterval: ReturnType<typeof setInterval>;
-    let statusInterval: ReturnType<typeof setInterval>;
-    let currentBlobUrl = "";
-
     authFetch("/api/auth/start", { method: "POST" })
-      .then(r => r.ok ? setPhase("waiting") : Promise.reject())
-      .catch(() => { setError("Failed to start login"); setPhase("error"); });
+      .then(r => r.json())
+      .then(d => setPhase(d.phase ?? "enter_phone"))
+      .catch(() => { setError("Failed to start"); setPhase("error"); });
 
-    const fetchQr = async () => {
-      const res = await authFetch(`/api/auth/qr?t=${Date.now()}`).catch(() => null);
-      if (!res?.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setQrSrc(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
-      currentBlobUrl = url;
-    };
-
-    imgInterval = setInterval(fetchQr, 1500);
-
-    statusInterval = setInterval(async () => {
+    const poll = setInterval(async () => {
       const res = await authFetch("/api/auth/status").catch(() => null);
       if (!res?.ok) return;
-      const data = await res.json();
-      if (data.status === "done") {
-        clearInterval(statusInterval); clearInterval(imgInterval);
-        setPhase("done");
+      const d = await res.json();
+      if (d.phase === "done") {
+        clearInterval(poll); setPhase("done");
         setTimeout(() => { onSuccess(); onClose(); }, 1000);
-      } else if (data.status === "error") {
-        clearInterval(statusInterval); clearInterval(imgInterval);
-        setError(data.error ?? "Login failed");
-        setPhase("error");
+      } else if (d.phase === "error") {
+        clearInterval(poll); setError(d.error ?? "Login failed"); setPhase("error");
       }
     }, 2000);
 
-    return () => {
-      clearInterval(statusInterval);
-      clearInterval(imgInterval);
-      if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-    };
+    return () => clearInterval(poll);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/80"
-        onClick={phase === "waiting" ? undefined : onClose}
-      />
-      <div className="relative w-full max-w-sm bg-[#0f0f0f] border border-[#2a2a2a] rounded-2xl overflow-hidden">
+  async function handlePhone(e: React.FormEvent) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    const res = await authFetch("/api/auth/phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    }).catch(() => null);
+    const d = await res?.json().catch(() => ({}));
+    if (!res?.ok) setError(d?.error ?? "Failed to send code");
+    else setPhase("enter_otp");
+    setLoading(false);
+  }
 
-        {/* header */}
-        <div className="px-5 pt-5 pb-4">
+  async function handleOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    const res = await authFetch("/api/auth/otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ otp }),
+    }).catch(() => null);
+    const d = await res?.json().catch(() => ({}));
+    if (!res?.ok) setError(d?.error ?? "Invalid code");
+    setLoading(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80" onClick={onClose} />
+      <div className="relative w-full max-w-sm bg-[#0f0f0f] border border-[#2a2a2a] rounded-2xl p-5 space-y-5">
+
+        <div>
           <h2 className="text-base font-semibold">Connect TikTok</h2>
-          <p className="text-xs text-[#555] mt-0.5">Scan the QR code with TikTok on your phone</p>
+          <p className="text-xs text-[#555] mt-0.5">
+            {phase === "enter_phone" && "Enter your TikTok phone number"}
+            {phase === "enter_otp"   && "Enter the code TikTok sent you"}
+            {phase === "starting"    && "Starting…"}
+            {phase === "done"        && "Connected!"}
+            {phase === "error"       && "Something went wrong"}
+          </p>
         </div>
 
-        {/* live screenshot area */}
         {phase === "starting" && (
-          <div className="flex items-center justify-center h-64 bg-[#080808]">
+          <div className="flex justify-center py-6">
             <span className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
           </div>
         )}
 
-        {phase === "waiting" && (
-          qrSrc
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={qrSrc} alt="TikTok login" className="w-full block" style={{ imageRendering: "crisp-edges" }} />
-            : <div className="flex items-center justify-center h-64 bg-[#080808]">
-                <span className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-              </div>
+        {phase === "enter_phone" && (
+          <form onSubmit={handlePhone} className="space-y-3">
+            <input
+              type="tel" autoFocus required value={phone}
+              onChange={e => setPhone(e.target.value)}
+              placeholder="+1 555 000 0000"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors"
+            />
+            {error && <p className="text-xs text-[#f55]">{error}</p>}
+            <button type="submit" disabled={loading || !phone.trim()}
+              className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-[#e5e5e5] disabled:opacity-40 transition-colors">
+              {loading ? "Sending…" : "Send code"}
+            </button>
+          </form>
+        )}
+
+        {phase === "enter_otp" && (
+          <form onSubmit={handleOtp} className="space-y-3">
+            <p className="text-xs text-[#555]">Sent to <span className="text-[#aaa]">{phone}</span></p>
+            <input
+              type="number" autoFocus required value={otp}
+              onChange={e => setOtp(e.target.value)}
+              placeholder="123456"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors tracking-widest"
+            />
+            {error && <p className="text-xs text-[#f55]">{error}</p>}
+            <button type="submit" disabled={loading || otp.length < 4}
+              className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-[#e5e5e5] disabled:opacity-40 transition-colors">
+              {loading ? "Verifying…" : "Verify"}
+            </button>
+            <button type="button" onClick={() => { setPhase("enter_phone"); setOtp(""); setError(""); }}
+              className="w-full h-10 text-xs text-[#555] hover:text-white transition-colors">
+              Wrong number? Go back
+            </button>
+          </form>
         )}
 
         {phase === "done" && (
-          <div className="flex items-center justify-center gap-3 h-32 bg-[#080808]">
+          <div className="flex items-center justify-center gap-2 py-4">
             <CheckCircle2 className="w-5 h-5 text-[#3ecf8e]" />
-            <p className="text-sm text-[#3ecf8e]">Connected!</p>
+            <p className="text-sm text-[#3ecf8e] font-medium">TikTok connected!</p>
           </div>
         )}
 
         {phase === "error" && (
-          <div className="flex flex-col items-center gap-2 h-32 justify-center bg-[#080808] px-5">
-            <XCircle className="w-5 h-5 text-[#f55]" />
-            <p className="text-sm text-[#f55] text-center">{error || "Login failed"}</p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <XCircle className="w-4 h-4 text-[#f55] flex-shrink-0" />
+              <p className="text-xs text-[#f55]">{error || "Login failed"}</p>
+            </div>
+            <button onClick={() => { setPhase("starting"); setError(""); authFetch("/api/auth/start", { method: "POST" }).then(r => r.json()).then(d => setPhase(d.phase ?? "enter_phone")); }}
+              className="w-full h-10 rounded-xl border border-[#222] text-sm text-[#555] hover:text-white transition-colors">
+              Try again
+            </button>
           </div>
         )}
 
-        {/* footer */}
-        {(phase === "waiting" || phase === "error") && (
-          <div className="p-4">
-            <button onClick={onClose}
-              className="w-full h-11 rounded-xl border border-[#222] text-sm text-[#555] hover:text-white transition-colors">
-              Cancel
-            </button>
-          </div>
+        {phase !== "done" && (
+          <button onClick={onClose}
+            className="w-full h-10 rounded-xl border border-[#1a1a1a] text-xs text-[#444] hover:text-[#888] transition-colors">
+            Cancel
+          </button>
         )}
       </div>
     </div>
