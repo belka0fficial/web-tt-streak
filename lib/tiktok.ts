@@ -219,7 +219,8 @@ export async function runAutomation(userId: string) {
         '--no-sandbox', '--disable-setuid-sandbox',
         '--disable-blink-features=AutomationControlled',
         '--disable-dev-shm-usage', '--disable-gpu',
-        '--no-zygote', '--single-process',
+        '--no-zygote', '--disable-extensions',
+        '--disable-software-rasterizer',
       ],
     });
     const ctx = await browser.newContext({

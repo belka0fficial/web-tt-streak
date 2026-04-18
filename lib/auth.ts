@@ -29,7 +29,6 @@ async function makeContext() {
       '--no-zygote',
       '--disable-extensions',
       '--disable-software-rasterizer',
-      '--single-process',          // reduces memory on Railway containers
     ],
   });
   const ctx = await browser.newContext({

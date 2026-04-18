@@ -16,4 +16,5 @@ RUN npm run build
 
 EXPOSE 3000
 ENV NODE_ENV=production
-CMD ["npm", "start"]
+# Use next directly so Railway's SIGTERM reaches the Node process (npm doesn't forward signals)
+CMD ["node_modules/.bin/next", "start"]
