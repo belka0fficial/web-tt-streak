@@ -488,7 +488,7 @@ export default function Page() {
           {/* Session row */}
           <button
             onClick={() => {
-              const popup = window.open("/auth/tiktok", "tiktok", "width=520,height=700,scrollbars=no");
+              window.open("/auth/tiktok", "_blank");
               const handler = (e: MessageEvent) => {
                 if (e.data === "tiktok-connected") {
                   window.removeEventListener("message", handler);
@@ -496,7 +496,6 @@ export default function Page() {
                 }
               };
               window.addEventListener("message", handler);
-              const check = setInterval(() => { if (popup?.closed) { clearInterval(check); window.removeEventListener("message", handler); loadStatus(); } }, 1000);
             }}
             className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-[#1a1a1a] text-left hover:bg-[#0a0a0a] transition-colors"
           >

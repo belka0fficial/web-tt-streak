@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Flame } from "lucide-react";
 import { getSupabase } from "@/lib/supabase";
 
-const VIEWPORT = { width: 480, height: 640 };
+const VIEWPORT = { width: 390, height: 844 };
 
 export default function TikTokBrowserPage() {
   const [token,  setToken]  = useState("");

@@ -46,13 +46,29 @@ export async function startLogin(userId: string): Promise<void> {
   closeBrowser();
   phase = 'starting'; loginError = null; activeUserId = userId;
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-dev-shm-usage',
+    ],
+  });
   const ctx = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    viewport: { width: 480, height: 800 },
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
   });
   await ctx.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    Object.defineProperty(navigator, 'webdriver',  { get: () => undefined });
+    Object.defineProperty(navigator, 'plugins',    { get: () => [1, 2, 3] });
+    Object.defineProperty(navigator, 'languages',  { get: () => ['en-US', 'en'] });
+    // @ts-ignore
+    delete window.__playwright;
+    // @ts-ignore
+    delete window.__pw_manual;
   });
 
   const page = await ctx.newPage();
