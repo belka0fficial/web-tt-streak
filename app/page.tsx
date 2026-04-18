@@ -316,9 +316,8 @@ export default function Page() {
     const code = new URLSearchParams(window.location.search).get("code");
     if (code) {
       getSupabase().auth.exchangeCodeForSession(code).then(({ data: { session } }) => {
-        window.history.replaceState(null, "", "/");
-        if (session) setSession(session);
-        else window.location.href = "/login";
+        if (session) window.location.replace("/");
+        else window.location.replace("/login");
       });
       return;
     }
