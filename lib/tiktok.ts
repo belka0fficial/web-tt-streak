@@ -1,10 +1,33 @@
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { getCookies, getSettings, addLog } from './db';
+import * as fs from 'fs';
 
 const SEL = {
-  messageBtn: ['[data-e2e="message-icon"]', '[data-e2e="user-message"]', 'button:has-text("Message")', '[aria-label="Message"]'],
-  input:      ['[data-e2e="message-input"]', 'div[contenteditable="true"]', '[placeholder*="message" i]'],
-  sendBtn:    ['[data-e2e="send-message"]', '[data-e2e="send-message-btn"]', 'button[type="submit"]'],
+  messageBtn: [
+    '[data-e2e="user-message"]',
+    '[data-e2e="message-icon"]',
+    'button[data-e2e*="message"]',
+    'a[data-e2e*="message"]',
+    'button:has-text("Message")',
+    'a:has-text("Message")',
+    '[aria-label*="Message" i]',
+    '[aria-label*="message" i]',
+    'button[class*="message" i]',
+    'a[class*="message" i]',
+  ],
+  input: [
+    '[data-e2e="message-input"]',
+    '[contenteditable="true"]',
+    'div[contenteditable]',
+    '[placeholder*="message" i]',
+    '[placeholder*="Send" i]',
+  ],
+  sendBtn: [
+    '[data-e2e="send-message-btn"]',
+    '[data-e2e="send-message"]',
+    'button[type="submit"]',
+    'button:has-text("Send")',
+  ],
   loginCheck: '[data-e2e="login-button"], [href*="/login"]',
 };
 
@@ -37,7 +60,13 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
       throw new Error('Session expired — reconnect TikTok');
 
     const btn = await firstVisible(page, SEL.messageBtn, 10_000).catch(() => null);
-    if (!btn) throw new Error(`Message button not found for ${handle}`);
+    if (!btn) {
+      const shot = await page.screenshot({ type: 'png' }).catch(() => null);
+      if (shot) fs.writeFileSync('/tmp/tiktok-debug.png', shot);
+      const url = page.url();
+      const title = await page.title().catch(() => '?');
+      throw new Error(`Message button not found — page: "${title}" url: ${url}`);
+    }
     await btn.click();
     await page.waitForTimeout(2000);
 
@@ -79,10 +108,8 @@ export async function runAutomation(userId: string) {
       ],
     });
     const ctx = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
-      viewport: { width: 390, height: 844 },
-      isMobile: true,
-      hasTouch: true,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 800 },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.addCookies(cookies as any);
