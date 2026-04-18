@@ -301,7 +301,7 @@ export default function Page() {
     if (!res?.ok) return;
     const data = await res.json();
     setSessionOk(data.sessionOk);
-    setLog(data.log);
+    setLog(data.logs ?? []);
     setRunning(data.status === "running");
     if (!initializedRef.current) {
       initializedRef.current = true;
