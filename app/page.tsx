@@ -251,7 +251,7 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
             <input
               type="tel" autoFocus required value={phone}
               onChange={e => setPhone(e.target.value)}
-              placeholder="+1 555 000 0000"
+              placeholder="+972 52 659 8196"
               className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-[#333] focus:outline-none focus:border-[#555] transition-colors"
             />
             {error && <p className="text-xs text-[#f55]">{error}</p>}
