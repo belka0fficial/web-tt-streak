@@ -20,9 +20,8 @@ export async function getSettings(userId: string): Promise<Settings> {
     sb.from('settings').select('*').eq('user_id', userId).single(),
     sb.from('friends').select('*').eq('user_id', userId),
   ]);
-  console.log('[getSettings] userId:', userId);
-  console.log('[getSettings] settings row:', s ? JSON.stringify({ schedule_enabled: s.schedule_enabled, schedule_time: s.schedule_time, message: s.message }) : `null (err: ${sErr?.message})`);
-  console.log('[getSettings] friends:', JSON.stringify(friends), fErr?.message ?? '');
+  if (sErr) console.error('[getSettings] settings error:', sErr.message);
+  if (fErr) console.error('[getSettings] friends error:', fErr.message);
   if (!s) return {
     ...DEFAULT_SETTINGS,
     friends: (friends ?? []).map(f => ({ id: f.id, name: f.name, handle: f.handle, active: f.active })),
@@ -49,9 +48,6 @@ export async function patchSettings(userId: string, patch: Partial<Settings>) {
     };
     const { error } = await sb.from('settings').upsert(row, { onConflict: 'user_id' });
     if (error) throw new Error(`settings: ${error.message}`);
-    // Read back to confirm what was actually stored
-    const { data: check } = await sb.from('settings').select('schedule_enabled,schedule_time,message').eq('user_id', userId).single();
-    console.log('[patchSettings] confirmed in DB:', JSON.stringify(check));
   }
 
   if (patch.friends !== undefined) {
@@ -62,8 +58,6 @@ export async function patchSettings(userId: string, patch: Partial<Settings>) {
         patch.friends.map(({ name, handle, active }) => ({ user_id: userId, name, handle, active }))
       );
       if (insErr) throw new Error(`friends insert: ${insErr.message}`);
-    const { data: fcheck } = await sb.from('friends').select('name,handle').eq('user_id', userId);
-    console.log('[patchSettings] friends in DB:', JSON.stringify(fcheck));
     }
   }
 }
