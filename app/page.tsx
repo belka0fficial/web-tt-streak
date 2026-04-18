@@ -577,11 +577,15 @@ export default function Page() {
   }, [session]);
 
   async function patch(body: object) {
-    await authFetch("/api/settings", {
+    const res = await authFetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).catch(console.error);
+    }).catch((e) => { console.error("[patch]", e); return null; });
+    if (res && !res.ok) {
+      const d = await res.json().catch(() => ({}));
+      console.error("[patch] server error:", d.error ?? res.status);
+    }
   }
 
   async function handleScheduleToggle(on: boolean) {

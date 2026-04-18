@@ -18,7 +18,7 @@ export async function getSettings(userId: string): Promise<Settings> {
   const sb = serverSupabase();
   const [{ data: s }, { data: friends }] = await Promise.all([
     sb.from('settings').select('*').eq('user_id', userId).single(),
-    sb.from('friends').select('*').eq('user_id', userId).order('created_at'),
+    sb.from('friends').select('*').eq('user_id', userId),
   ]);
   if (!s) return { ...DEFAULT_SETTINGS };
   return {
@@ -31,37 +31,29 @@ export async function getSettings(userId: string): Promise<Settings> {
 export async function patchSettings(userId: string, patch: Partial<Settings>) {
   const sb = serverSupabase();
 
-  const hasSettingsFields =
-    patch.schedule?.enabled !== undefined ||
-    patch.schedule?.time    !== undefined ||
-    patch.message           !== undefined;
-
-  if (hasSettingsFields) {
-    const { data: existing } = await sb.from('settings').select('user_id').eq('user_id', userId).single();
-    if (existing) {
-      const upd: Record<string, unknown> = {};
-      if (patch.schedule?.enabled !== undefined) upd.schedule_enabled = patch.schedule.enabled;
-      if (patch.schedule?.time    !== undefined) upd.schedule_time    = patch.schedule.time;
-      if (patch.message           !== undefined) upd.message          = patch.message;
-      await sb.from('settings').update(upd).eq('user_id', userId);
-    } else {
-      await sb.from('settings').insert({
-        user_id:          userId,
-        schedule_enabled: patch.schedule?.enabled ?? false,
-        schedule_time:    patch.schedule?.time    ?? '09:00',
-        message:          patch.message           ?? '🐿️🐿️🐿️',
-        tiktok_cookies:   null,
-      });
-    }
+  if (patch.schedule !== undefined || patch.message !== undefined) {
+    // Read current row so we can merge — prevents clobbering other columns
+    const { data: cur } = await sb.from('settings').select('*').eq('user_id', userId).single();
+    const row = {
+      user_id:          userId,
+      schedule_enabled: patch.schedule?.enabled ?? cur?.schedule_enabled ?? false,
+      schedule_time:    patch.schedule?.time    ?? cur?.schedule_time    ?? '09:00',
+      message:          patch.message           ?? cur?.message          ?? '🐿️🐿️🐿️',
+      tiktok_cookies:   cur?.tiktok_cookies     ?? null,
+    };
+    const { error } = await sb.from('settings').upsert(row, { onConflict: 'user_id' });
+    if (error) throw new Error(`settings: ${error.message}`);
   }
 
   if (patch.friends !== undefined) {
-    await sb.from('friends').delete().eq('user_id', userId);
-    if (patch.friends.length > 0)
-      await sb.from('friends').insert(
-        // omit client-side id — let the DB generate its own primary key
+    const { error: delErr } = await sb.from('friends').delete().eq('user_id', userId);
+    if (delErr) throw new Error(`friends delete: ${delErr.message}`);
+    if (patch.friends.length > 0) {
+      const { error: insErr } = await sb.from('friends').insert(
         patch.friends.map(({ name, handle, active }) => ({ user_id: userId, name, handle, active }))
       );
+      if (insErr) throw new Error(`friends insert: ${insErr.message}`);
+    }
   }
 }
 
