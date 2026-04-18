@@ -329,8 +329,7 @@ export default function Page() {
   const [running,   setRunning]   = useState(false);
 
   // UI state
-  const [timePickerOpen,  setTimePickerOpen]  = useState(false);
-  const [loginModalOpen,  setLoginModalOpen]  = useState(false);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const [adding,    setAdding]    = useState(false);
   const [newName,   setNewName]   = useState("");
   const [newHandle, setNewHandle] = useState("");
@@ -459,13 +458,6 @@ export default function Page() {
           onClose={() => setTimePickerOpen(false)}
         />
       )}
-      {loginModalOpen && (
-        <LoginModal
-          onClose={() => setLoginModalOpen(false)}
-          onSuccess={() => { setSessionOk(true); loadStatus(); }}
-          authFetch={authFetch}
-        />
-      )}
 
       <div className="max-w-[480px] mx-auto px-5 pt-12 pb-24 space-y-4">
 
@@ -495,7 +487,17 @@ export default function Page() {
         <section className="border border-[#1e1e1e] rounded-xl overflow-hidden">
           {/* Session row */}
           <button
-            onClick={() => setLoginModalOpen(true)}
+            onClick={() => {
+              const popup = window.open("/auth/tiktok", "tiktok", "width=520,height=700,scrollbars=no");
+              const handler = (e: MessageEvent) => {
+                if (e.data === "tiktok-connected") {
+                  window.removeEventListener("message", handler);
+                  setSessionOk(true); loadStatus();
+                }
+              };
+              window.addEventListener("message", handler);
+              const check = setInterval(() => { if (popup?.closed) { clearInterval(check); window.removeEventListener("message", handler); loadStatus(); } }, 1000);
+            }}
             className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-[#1a1a1a] text-left hover:bg-[#0a0a0a] transition-colors"
           >
             <div className={clsx(

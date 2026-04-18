@@ -168,9 +168,25 @@ export async function submitOtp(otp: string): Promise<void> {
   pollForSession(userId);
 }
 
-// Legacy QR screenshot support
 export async function getLoginScreenshot(): Promise<Buffer | null> {
   if (!activePage) return null;
   try { return await activePage.screenshot({ type: 'png' }); }
   catch { return null; }
+}
+
+export async function handleClick(x: number, y: number): Promise<void> {
+  if (!activePage) return;
+  await activePage.mouse.click(x, y);
+}
+
+export async function handleKey(key: string): Promise<void> {
+  if (!activePage) return;
+  if (key.length === 1) await activePage.keyboard.type(key);
+  else await activePage.keyboard.press(key);
+}
+
+export async function handleScroll(x: number, y: number, deltaY: number): Promise<void> {
+  if (!activePage) return;
+  await activePage.mouse.move(x, y);
+  await activePage.mouse.wheel(0, deltaY);
 }
