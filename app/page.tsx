@@ -342,9 +342,6 @@ export default function Page() {
     return fetch(url, {
       ...opts,
       headers: { ...opts?.headers, Authorization: `Bearer ${token}` },
-    }).then(r => {
-      if (r.status === 401) { window.location.href = "/login"; throw new Error("401"); }
-      return r;
     });
   }, [session]);
 
@@ -355,12 +352,12 @@ export default function Page() {
     setSessionOk(data.sessionOk);
     setLog(data.logs ?? []);
     setRunning(data.status === "running");
-    if (!initializedRef.current) {
+    if (!initializedRef.current && data.settings) {
       initializedRef.current = true;
-      setScheduleOn(data.settings.schedule.enabled);
-      setScheduleTime(data.settings.schedule.time);
-      setFriends(data.settings.friends);
-      setMsg(data.settings.message);
+      setScheduleOn(data.settings.schedule?.enabled ?? false);
+      setScheduleTime(data.settings.schedule?.time ?? "09:00");
+      setFriends(data.settings.friends ?? []);
+      setMsg(data.settings.message ?? "🐿️🐿️🐿️");
     }
   }
 
