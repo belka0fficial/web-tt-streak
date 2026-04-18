@@ -1,0 +1,31 @@
+name: StreakSaver
+options:
+  bundleIdPrefix: com.streaksaver
+  deploymentTarget:
+    iOS: "16.0"
+
+targets:
+  StreakSaver:
+    type: application
+    platform: iOS
+    sources: App
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Streak Saver
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchStoryboardName: ""
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.streaksaver.app
+      SWIFT_VERSION: "5.9"
+      IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+      CODE_SIGN_IDENTITY: ""
+      CODE_SIGNING_REQUIRED: "NO"
+      CODE_SIGNING_ALLOWED: "NO"

@@ -109,62 +109,33 @@ The app has a built-in scheduler. You can add a Railway Cron Job as a belt-and-s
 
 ---
 
-## Install on your phone (no App Store needed)
+## Install on your phone
 
-The site is a PWA — it installs to your home screen and opens full-screen like a native app.
+### Android — download the APK directly
 
-### iPhone (Safari only)
+1. Go to the [Releases](../../releases) page of this repo
+2. Download `StreakSaver.apk`
+3. Open it on your Android phone
+4. If prompted, tap **Settings → Allow from this source**
+5. Tap **Install**
+
+### iPhone — install the IPA with AltStore (free, no Apple account needed)
+
+1. Install [AltStore](https://altstore.io) on your iPhone (one-time setup, 5 min)
+2. Go to the [Releases](../../releases) page of this repo
+3. Download `StreakSaver.ipa` to your phone
+4. Open AltStore → tap **+** → select the `.ipa` file
+
+> AltStore is free and requires no developer account. It re-signs the app automatically.  
+> The app stays installed permanently on your device.
+
+### iPhone — PWA (simplest, no install needed)
 
 1. Open your Railway URL in **Safari**
 2. Tap the **Share** button (bottom center, box with arrow)
-3. Scroll down → **Add to Home Screen**
-4. Tap **Add**
+3. Scroll down → **Add to Home Screen** → **Add**
 
-Done. It appears on your home screen with its own icon.
-
-### Android (Chrome)
-
-1. Open your Railway URL in **Chrome**
-2. Tap the **three-dot menu** (top right)
-3. Tap **Add to Home screen** or **Install app**
-4. Tap **Add**
-
----
-
-## Wrap as a real native app (optional)
-
-If you want a proper `.apk` or `.ipa` file to distribute:
-
-### Android — Bubblewrap (TWA)
-
-A Trusted Web Activity wraps your web app in a real Android app with zero extra code.
-
-```bash
-npm install -g @bubblewrap/cli
-bubblewrap init --manifest https://your-app.up.railway.app/manifest.json
-bubblewrap build
-# outputs app-release-signed.apk
-```
-
-Upload the `.aab` to the Play Store or sideload the `.apk` directly.
-See [Bubblewrap docs](https://github.com/GoogleChromeLabs/bubblewrap) for signing + assetlinks setup.
-
-### iPhone — Capacitor (WKWebView wrapper)
-
-Capacitor wraps your web app in a native iOS shell without rewriting any code.
-
-```bash
-npm install @capacitor/core @capacitor/cli @capacitor/ios
-npx cap init "Streak Saver" "com.yourname.streaksaver" --web-dir out
-npx cap add ios
-npx cap sync
-npx cap open ios   # opens Xcode
-```
-
-In Xcode, point the app at your Railway URL, then build and sign with your Apple Developer account.
-
-> Distributing on the App Store requires an Apple Developer account ($99/year).  
-> For personal use / friends, use TestFlight (free, up to 10k testers) or AltStore sideloading.
+Opens full-screen like a native app, no AltStore needed.
 
 ---
 
