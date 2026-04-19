@@ -116,7 +116,19 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
       if (ok) return;
     }
 
-    const input = await firstVisible(page, SEL.input, 10_000).catch(() => null);
+    // TikTok sometimes shows a login modal on the profile page when it detects
+    // automation — retry by going directly to the messages inbox
+    const titleAfterClick = await page.title().catch(() => '');
+    if (titleAfterClick.toLowerCase().includes('log in')) {
+      await page.goto('https://www.tiktok.com/messages', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await page.waitForTimeout(3000);
+      if (!page.url().includes('/login')) {
+        const ok = await sendFromInbox(page, cleanHandle, message);
+        if (ok) return;
+      }
+    }
+
+    const input = await firstVisible(page, SEL.input, 8_000).catch(() => null);
     if (!input) {
       const shot = await page.screenshot({ type: 'png' }).catch(() => null);
       if (shot) fs.writeFileSync('/tmp/tiktok-debug.png', shot);
@@ -243,12 +255,26 @@ const BROWSER_ARGS = [
 ];
 
 async function sendDMFresh(cookies: object[], handle: string, message: string) {
-  // Fresh browser per friend — prevents memory accumulation from crashing Chrome
   const browser = await chromium.launch({ headless: true, args: BROWSER_ARGS });
   try {
     const ctx = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 },
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
+    });
+    // Mask headless indicators that TikTok uses for bot detection
+    await ctx.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver',   { get: () => undefined });
+      Object.defineProperty(navigator, 'plugins',     { get: () => [1, 2, 3, 4, 5] });
+      Object.defineProperty(navigator, 'languages',   { get: () => ['en-US', 'en'] });
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+      Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
+      // @ts-ignore
+      delete window.__playwright; delete window.__pw_manual;
+      // Realistic chrome object
+      // @ts-ignore
+      window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.addCookies(cookies as any);
