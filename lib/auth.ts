@@ -1,5 +1,9 @@
-import { chromium, type Page, type BrowserContext } from 'playwright';
+import { chromium as chromiumExtra } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { type Page, type BrowserContext } from 'playwright';
 import { setCookies } from './db';
+
+chromiumExtra.use(StealthPlugin());
 
 export type LoginPhase = 'idle' | 'starting' | 'enter_phone' | 'enter_otp' | 'done' | 'error';
 
@@ -18,7 +22,8 @@ function closeBrowser() {
 }
 
 async function makeContext() {
-  const browser = await chromium.launch({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const browser = await (chromiumExtra as any).launch({
     headless: true,
     args: [
       '--no-sandbox',

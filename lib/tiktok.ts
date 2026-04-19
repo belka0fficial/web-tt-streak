@@ -1,6 +1,10 @@
-import { chromium, type BrowserContext, type Page } from 'playwright';
+import { chromium as chromiumExtra } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { type BrowserContext, type Page } from 'playwright';
 import { getCookies, getSettings, addLog } from './db';
 import * as fs from 'fs';
+
+chromiumExtra.use(StealthPlugin());
 
 const SEL = {
   messageBtn: [
@@ -255,26 +259,14 @@ const BROWSER_ARGS = [
 ];
 
 async function sendDMFresh(cookies: object[], handle: string, message: string) {
-  const browser = await chromium.launch({ headless: true, args: BROWSER_ARGS });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const browser = await (chromiumExtra as any).launch({ headless: true, args: BROWSER_ARGS });
   try {
     const ctx = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 },
       locale: 'en-US',
       timezoneId: 'America/New_York',
-    });
-    // Mask headless indicators that TikTok uses for bot detection
-    await ctx.addInitScript(() => {
-      Object.defineProperty(navigator, 'webdriver',   { get: () => undefined });
-      Object.defineProperty(navigator, 'plugins',     { get: () => [1, 2, 3, 4, 5] });
-      Object.defineProperty(navigator, 'languages',   { get: () => ['en-US', 'en'] });
-      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-      Object.defineProperty(navigator, 'deviceMemory',        { get: () => 8 });
-      // @ts-ignore
-      delete window.__playwright; delete window.__pw_manual;
-      // Realistic chrome object
-      // @ts-ignore
-      window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.addCookies(cookies as any);
