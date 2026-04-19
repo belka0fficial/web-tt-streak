@@ -121,7 +121,7 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
 
     const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
     if (send) await send.click();
-    else await input.press('Enter');
+    else await page.keyboard.press('Enter'); // avoid re-evaluating the locator
     await page.waitForTimeout(1500);
   } finally {
     await page.close();
@@ -194,9 +194,33 @@ async function sendViaMsgInbox(page: Page, handle: string, message: string): Pro
 
   const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
   if (send) await send.click();
-  else await input.press('Enter');
+  else await page.keyboard.press('Enter');
   await page.waitForTimeout(1500);
   return true;
+}
+
+const BROWSER_ARGS = [
+  '--no-sandbox', '--disable-setuid-sandbox',
+  '--disable-blink-features=AutomationControlled',
+  '--disable-dev-shm-usage', '--disable-gpu',
+  '--no-zygote', '--disable-extensions',
+  '--disable-software-rasterizer',
+];
+
+async function sendDMFresh(cookies: object[], handle: string, message: string) {
+  // Fresh browser per friend — prevents memory accumulation from crashing Chrome
+  const browser = await chromium.launch({ headless: true, args: BROWSER_ARGS });
+  try {
+    const ctx = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 800 },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ctx.addCookies(cookies as any);
+    await sendDM(ctx, handle, message);
+  } finally {
+    await browser.close();
+  }
 }
 
 export async function runAutomation(userId: string) {
@@ -209,35 +233,21 @@ export async function runAutomation(userId: string) {
   const total = active.length;
   let sent = 0;
 
-  let browser;
   try {
     if (!cookies?.length) throw new Error('No TikTok session — connect TikTok first');
 
-    browser = await chromium.launch({
-      headless: true,
-      args: [
-        '--no-sandbox', '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-dev-shm-usage', '--disable-gpu',
-        '--no-zygote', '--disable-extensions',
-        '--disable-software-rasterizer',
-      ],
-    });
-    const ctx = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      viewport: { width: 1280, height: 800 },
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await ctx.addCookies(cookies as any);
-
     const errors: string[] = [];
     for (const friend of active) {
-      try { await sendDM(ctx, friend.handle, settings.message); sent++; }
-      catch (e) {
+      try {
+        await sendDMFresh(cookies, friend.handle, settings.message);
+        sent++;
+      } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         errors.push(`${friend.handle}: ${msg}`);
         console.error(`[tiktok] failed ${friend.handle}:`, e);
       }
+      // Brief pause between friends so Railway memory can settle
+      if (active.indexOf(friend) < active.length - 1) await new Promise(r => setTimeout(r, 3000));
     }
 
     const ok = sent === total;
@@ -248,8 +258,6 @@ export async function runAutomation(userId: string) {
     const msg = e instanceof Error ? e.message : String(e);
     states.set(userId, { status: 'error', error: msg });
     await addLog(userId, { ok: false, sent, total, detail: msg });
-  } finally {
-    await browser?.close();
   }
 
   setTimeout(() => { if (states.get(userId)?.status !== 'running') states.delete(userId); }, 15_000);
