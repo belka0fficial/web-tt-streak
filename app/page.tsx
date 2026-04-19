@@ -344,7 +344,7 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
           <div className="space-y-2">
             {[
               { icon: "🔑", title: "Phone + password", sub: "Logs in silently in the background", action: () => setMode("creds") },
-              { icon: "🍪", title: "Paste session ID", sub: "Copy sessionid from browser DevTools", action: () => setMode("session") },
+              { icon: "🍪", title: "Paste cookie header", sub: "Copy Cookie: header from browser DevTools", action: () => setMode("session") },
             ].map(({ icon, title, sub, action }) => (
               <button key={title} onClick={action} disabled={loading}
                 className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#444] transition-colors text-left disabled:opacity-40">
@@ -418,22 +418,25 @@ function LoginModal({ onClose, onSuccess, authFetch }: {
         {mode === "session" && (
           <form onSubmit={handleSessionId} className="space-y-3">
             <div className="rounded-xl bg-[#0a0a0a] border border-[#2a2a2a] p-3 space-y-1">
-              <p className="text-xs font-medium text-[#888]">How to get your session ID:</p>
+              <p className="text-xs font-medium text-[#888]">Copy all cookies (required for DMs):</p>
               <ol className="text-xs text-[#555] space-y-0.5 list-decimal list-inside">
-                <li>Open TikTok in Chrome on a computer</li>
-                <li>Press F12 → Application → Cookies → tiktok.com</li>
-                <li>Find <span className="text-[#888] font-mono">sessionid</span> and copy its value</li>
+                <li>Open TikTok in Chrome — make sure you&apos;re logged in</li>
+                <li>Press <span className="text-[#888]">F12</span> → <span className="text-[#888]">Network</span> tab</li>
+                <li>Reload the page, click any request to <span className="text-[#888] font-mono">tiktok.com</span></li>
+                <li>In <span className="text-[#888]">Request Headers</span> find <span className="text-[#888] font-mono">cookie:</span></li>
+                <li>Right-click the value → <span className="text-[#888]">Copy value</span> — paste it below</li>
               </ol>
             </div>
-            <input
+            <textarea
               autoFocus required
+              rows={3}
               value={sessionId}
               onChange={e => setSessionId(e.target.value.trim())}
-              placeholder="Paste sessionid value here"
-              className={inputCls + " font-mono text-xs"}
+              placeholder="sessionid=abc; ttwid=xyz; tt_csrf_token=…"
+              className={inputCls + " font-mono text-[11px] resize-none"}
             />
             {error && <p className="text-xs text-[#f55]">{error}</p>}
-            <button type="submit" disabled={loading || sessionId.length < 10}
+            <button type="submit" disabled={loading || !sessionId.includes('=')}
               className="w-full h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-[#e5e5e5] disabled:opacity-40 transition-colors">
               {loading ? "Saving…" : "Connect"}
             </button>

@@ -232,58 +232,41 @@ export async function startQRLogin(userId: string): Promise<void> {
   pollForSession(userId);
 }
 
-// ── Session ID paste ───────────────────────────────────────────────────────────
-// User copies sessionid from browser DevTools and pastes it here.
-// We hydrate it: visit TikTok with just sessionid so their JS generates ttwid,
-// tt_csrf_token, msToken etc., then save the full cookie set.
-export async function setSessionId(userId: string, sessionId: string): Promise<void> {
-  const seed = [{
+// ── Cookie paste ──────────────────────────────────────────────────────────────
+// User copies the full Cookie header from any TikTok network request.
+// This gives us ALL cookies (sessionid + ttwid + tt_csrf_token + msToken etc.)
+// which TikTok requires for DM access — sessionid alone is not enough.
+export async function setSessionId(userId: string, input: string): Promise<void> {
+  const trimmed = input.trim();
+  const cookies = trimmed.includes(';') ? parseCookieHeader(trimmed) : [seedCookie(trimmed)];
+  await setCookies(userId, cookies);
+}
+
+function seedCookie(sessionId: string) {
+  return {
     name: 'sessionid',
-    value: sessionId.trim(),
+    value: sessionId,
     domain: '.tiktok.com',
     path: '/',
     httpOnly: true,
     secure: true,
     sameSite: 'None' as const,
     expires: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60,
-  }];
-
-  // Save seed immediately so the UI shows "connected" right away
-  await setCookies(userId, seed);
-
-  // Then hydrate in background — launch browser, let TikTok JS set all cookies
-  hydrateSession(userId, sessionId.trim()).catch(e =>
-    console.error('[auth] hydrateSession failed:', e)
-  );
+  };
 }
 
-async function hydrateSession(userId: string, sessionId: string): Promise<void> {
-  const ctx = await makeContext();
-  try {
-    await ctx.addCookies([{
-      name: 'sessionid',
-      value: sessionId,
-      domain: '.tiktok.com',
-      path: '/',
-      httpOnly: true,
-      secure: true,
-      sameSite: 'None' as const,
-      expires: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60,
-    }]);
-
-    const page = await ctx.newPage();
-    await page.goto('https://www.tiktok.com', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await page.waitForTimeout(6000); // let TikTok JS set ttwid / tt_csrf_token / msToken
-    await page.close();
-
-    const cookies = await ctx.cookies('https://www.tiktok.com');
-    if (cookies.some(c => c.name === 'sessionid')) {
-      await setCookies(userId, cookies);
-      console.log(`[auth] hydrated ${cookies.length} cookies for ${userId}`);
-    }
-  } finally {
-    await ctx.browser()?.close().catch(() => {});
-  }
+function parseCookieHeader(header: string) {
+  const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 60;
+  return header.split(';')
+    .map(part => {
+      const eq = part.indexOf('=');
+      if (eq === -1) return null;
+      const name  = part.slice(0, eq).trim();
+      const value = part.slice(eq + 1).trim();
+      if (!name || !value) return null;
+      return { name, value, domain: '.tiktok.com', path: '/', secure: true, sameSite: 'None' as const, expires: exp };
+    })
+    .filter(Boolean) as object[];
 }
 
 // ── Interactive popup (fallback) ───────────────────────────────────────────────

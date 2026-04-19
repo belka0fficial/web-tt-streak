@@ -15,6 +15,7 @@ export function getSupabase(): SupabaseClient {
 }
 
 // Server client — force no-store so Next.js 14 never caches Supabase responses
+// Retries on ECONNRESET (Railway ↔ Supabase TLS drops under Playwright load)
 export function serverSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,8 +23,18 @@ export function serverSupabase() {
     {
       auth: { persistSession: false },
       global: {
-        fetch: (url: RequestInfo | URL, init?: RequestInit) =>
-          fetch(url, { ...init, cache: 'no-store' }),
+        fetch: async (url: RequestInfo | URL, init?: RequestInit) => {
+          let lastErr: unknown;
+          for (let i = 0; i < 3; i++) {
+            try {
+              return await fetch(url, { ...init, cache: 'no-store' });
+            } catch (e) {
+              lastErr = e;
+              if (i < 2) await new Promise(r => setTimeout(r, 600 * (i + 1)));
+            }
+          }
+          throw lastErr;
+        },
       },
     }
   );
