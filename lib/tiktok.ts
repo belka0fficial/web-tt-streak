@@ -110,7 +110,13 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
     await btn.click({ force: true });
     await page.waitForTimeout(3000);
 
-    const input = await firstVisible(page, SEL.input, 15_000).catch(() => null);
+    // Message button may navigate to the inbox instead of opening an inline panel
+    if (page.url().includes('/messages')) {
+      const ok = await sendFromInbox(page, cleanHandle, message);
+      if (ok) return;
+    }
+
+    const input = await firstVisible(page, SEL.input, 10_000).catch(() => null);
     if (!input) {
       const shot = await page.screenshot({ type: 'png' }).catch(() => null);
       if (shot) fs.writeFileSync('/tmp/tiktok-debug.png', shot);
@@ -121,82 +127,104 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
 
     const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
     if (send) await send.click();
-    else await page.keyboard.press('Enter'); // avoid re-evaluating the locator
+    else await page.keyboard.press('Enter');
     await page.waitForTimeout(1500);
   } finally {
     await page.close();
   }
 }
 
-async function sendViaMsgInbox(page: Page, handle: string, message: string): Promise<boolean> {
-  await page.goto('https://www.tiktok.com/messages', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForTimeout(3000);
+// Called when we're already on the /messages page (either via direct nav or
+// because clicking Message on a profile redirected us here).
+// Tries: 1) conversation auto-opened → input visible, just type
+//        2) search sidebar for the user and click their thread
+//        3) click compose → search → select → type
+async function sendFromInbox(page: Page, handle: string, message: string): Promise<boolean> {
   await dismissModals(page);
 
-  // If redirected to login, inbox approach won't work
-  if (page.url().includes('/login') || await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
-    return false;
+  // 1. Check if a conversation is already open (Message button may auto-open it)
+  const directInput = await firstVisible(page, SEL.input, 4000).catch(() => null);
+  if (directInput) {
+    await directInput.click();
+    await directInput.type(message, { delay: 30 });
+    const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
+    if (send) await send.click(); else await page.keyboard.press('Enter');
+    await page.waitForTimeout(1500);
+    return true;
+  }
 
-  // Look for compose / new message button
+  // 2. Find the user in the conversation list sidebar
+  const convItem = page.locator([
+    `[data-e2e*="conversation"]:has-text("${handle}")`,
+    `[class*="conversationItem"]:has-text("${handle}")`,
+    `[class*="msgItem"]:has-text("${handle}")`,
+    `li:has-text("${handle}")`,
+  ].join(', ')).first();
+  if (await convItem.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await convItem.click();
+    await page.waitForTimeout(2000);
+    const input = await firstVisible(page, SEL.input, 8000).catch(() => null);
+    if (input) {
+      await input.click();
+      await input.type(message, { delay: 30 });
+      const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
+      if (send) await send.click(); else await page.keyboard.press('Enter');
+      await page.waitForTimeout(1500);
+      return true;
+    }
+  }
+
+  // 3. Compose a new conversation
   const composeSelectors = [
-    '[data-e2e="new-message-btn"]',
-    '[data-e2e="compose"]',
-    'button[aria-label*="compose" i]',
-    'button[aria-label*="new message" i]',
-    'button[aria-label*="New" i]',
-    'button:has-text("New message")',
-    'button:has-text("Compose")',
-    '[class*="compose" i]',
-    '[class*="newMessage" i]',
-    'svg[class*="compose"]',
+    '[data-e2e="new-message-btn"]', '[data-e2e="compose-btn"]',
+    'button[aria-label*="new message" i]', 'button[aria-label*="compose" i]',
+    'button[aria-label*="write" i]', 'button[title*="new" i]',
+    'button:has-text("New message")', 'button:has-text("Compose")',
+    '[class*="NewConversation"]', '[class*="newConversation"]',
+    '[class*="ComposeBtn"]', '[class*="composeBtn"]',
   ];
   const compose = await firstVisible(page, composeSelectors, 5000).catch(() => null);
   if (!compose) return false;
-
   await compose.click();
   await page.waitForTimeout(2000);
 
-  // Search for user in the recipient field
   const searchSelectors = [
-    '[data-e2e="search-user-input"]',
-    'input[placeholder*="Search" i]',
-    'input[placeholder*="search" i]',
-    'input[type="search"]',
-    'input[type="text"]',
+    '[data-e2e="search-user-input"]', 'input[placeholder*="Search" i]',
+    'input[placeholder*="search" i]', 'input[type="search"]', 'input[type="text"]',
   ];
   const searchInput = await firstVisible(page, searchSelectors, 5000).catch(() => null);
   if (!searchInput) return false;
-
   await searchInput.type(handle, { delay: 50 });
   await page.waitForTimeout(2000);
 
-  // Click first search result
   const resultSelectors = [
-    '[data-e2e="search-user-result"]',
-    '[class*="userItem" i]',
-    '[class*="user-item" i]',
-    '[class*="searchResult" i]',
-    'li[role="option"]',
-    '[role="option"]',
+    '[data-e2e="search-user-result"]', '[class*="userItem" i]',
+    '[class*="user-item" i]', '[class*="searchResult" i]',
+    'li[role="option"]', '[role="option"]',
   ];
   const result = await firstVisible(page, resultSelectors, 5000).catch(() => null);
   if (!result) return false;
-
   await result.click();
   await page.waitForTimeout(2000);
 
-  // Now type message in the chat input
   const input = await firstVisible(page, SEL.input, 10_000).catch(() => null);
   if (!input) return false;
-
   await input.click();
   await input.type(message, { delay: 30 });
-
   const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
-  if (send) await send.click();
-  else await page.keyboard.press('Enter');
+  if (send) await send.click(); else await page.keyboard.press('Enter');
   await page.waitForTimeout(1500);
   return true;
+}
+
+async function sendViaMsgInbox(page: Page, handle: string, message: string): Promise<boolean> {
+  await page.goto('https://www.tiktok.com/messages', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.waitForTimeout(3000);
+
+  if (page.url().includes('/login') || await page.locator(SEL.loginCheck).first().isVisible({ timeout: 2000 }).catch(() => false))
+    return false;
+
+  return sendFromInbox(page, handle, message);
 }
 
 const BROWSER_ARGS = [
