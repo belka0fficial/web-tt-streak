@@ -1,8 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['playwright'],
-    instrumentationHook: true, // required until Next.js 15 — loads instrumentation.ts
+    serverComponentsExternalPackages: [
+      'playwright',
+      'playwright-extra',
+      'puppeteer-extra-plugin-stealth',
+      'puppeteer-extra-plugin',
+      'clone-deep',
+      'merge-deep',
+    ],
+    instrumentationHook: true,
   },
 };
 
