@@ -134,36 +134,27 @@ async function sendDM(ctx: BrowserContext, handle: string, message: string) {
   }
 }
 
-// Called when we're already on the /messages page (either via direct nav or
-// because clicking Message on a profile redirected us here).
-// Tries: 1) conversation auto-opened → input visible, just type
-//        2) search sidebar for the user and click their thread
-//        3) click compose → search → select → type
+// Called when we're already on the /messages page.
+// SAFETY: never sends to a currently-open conversation without verifying it
+// belongs to the target — TikTok restores the last open chat on load, which
+// would cause duplicate messages to the wrong person.
 async function sendFromInbox(page: Page, handle: string, message: string): Promise<boolean> {
   await dismissModals(page);
+  await page.waitForTimeout(2000);
 
-  // 1. Check if a conversation is already open (Message button may auto-open it)
-  const directInput = await firstVisible(page, SEL.input, 4000).catch(() => null);
-  if (directInput) {
-    await directInput.click();
-    await directInput.type(message, { delay: 30 });
-    const send = await firstVisible(page, SEL.sendBtn, 3000).catch(() => null);
-    if (send) await send.click(); else await page.keyboard.press('Enter');
-    await page.waitForTimeout(1500);
-    return true;
-  }
-
-  // 2. Find the user in the conversation list sidebar
-  const convItem = page.locator([
-    `[data-e2e*="conversation"]:has-text("${handle}")`,
-    `[class*="conversationItem"]:has-text("${handle}")`,
-    `[class*="msgItem"]:has-text("${handle}")`,
-    `li:has-text("${handle}")`,
+  // Check if TikTok auto-opened the correct conversation (e.g. after clicking
+  // Message on the profile). Verify the conversation header before sending.
+  const headerEl = page.locator([
+    '[data-e2e="chat-username"]',
+    '[data-e2e="conversation-title"]',
+    '[class*="ConversationTitle"]',
+    '[class*="chatTitle"]',
+    'h2[class*="user"]',
   ].join(', ')).first();
-  if (await convItem.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await convItem.click();
-    await page.waitForTimeout(2000);
-    const input = await firstVisible(page, SEL.input, 8000).catch(() => null);
+  const headerText = (await headerEl.textContent({ timeout: 2000 }).catch(() => '')) ?? '';
+  const cleanHandle = handle.replace(/^@/, '').toLowerCase();
+  if (headerText && headerText.toLowerCase().replace(/[^a-z0-9_.]/g, '').includes(cleanHandle.replace(/[^a-z0-9_.]/g, '').slice(0, 6))) {
+    const input = await firstVisible(page, SEL.input, 5000).catch(() => null);
     if (input) {
       await input.click();
       await input.type(message, { delay: 30 });
@@ -174,7 +165,7 @@ async function sendFromInbox(page: Page, handle: string, message: string): Promi
     }
   }
 
-  // 3. Compose a new conversation
+  // Compose a new conversation — explicitly search for the exact handle
   const composeSelectors = [
     '[data-e2e="new-message-btn"]', '[data-e2e="compose-btn"]',
     'button[aria-label*="new message" i]', 'button[aria-label*="compose" i]',
@@ -195,16 +186,32 @@ async function sendFromInbox(page: Page, handle: string, message: string): Promi
   const searchInput = await firstVisible(page, searchSelectors, 5000).catch(() => null);
   if (!searchInput) return false;
   await searchInput.type(handle, { delay: 50 });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(2500);
 
+  // Find a result that actually contains the handle text to avoid wrong-person sends
   const resultSelectors = [
     '[data-e2e="search-user-result"]', '[class*="userItem" i]',
     '[class*="user-item" i]', '[class*="searchResult" i]',
     'li[role="option"]', '[role="option"]',
   ];
-  const result = await firstVisible(page, resultSelectors, 5000).catch(() => null);
-  if (!result) return false;
-  await result.click();
+  const allResults = page.locator(resultSelectors.join(', '));
+  const count = await allResults.count().catch(() => 0);
+  let matched = false;
+  for (let i = 0; i < Math.min(count, 5); i++) {
+    const item = allResults.nth(i);
+    const text = (await item.textContent().catch(() => '')) ?? '';
+    if (text.toLowerCase().includes(cleanHandle.slice(0, 5))) {
+      await item.click();
+      matched = true;
+      break;
+    }
+  }
+  // Fall back to first result if none matched by text
+  if (!matched) {
+    const first = await firstVisible(page, resultSelectors, 3000).catch(() => null);
+    if (!first) return false;
+    await first.click();
+  }
   await page.waitForTimeout(2000);
 
   const input = await firstVisible(page, SEL.input, 10_000).catch(() => null);
